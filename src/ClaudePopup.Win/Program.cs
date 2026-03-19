@@ -31,6 +31,8 @@ static class Program
         string type = NotificationType.Info;
         string? messageFile = null;
         string? saveQuestion = null;
+        string sessionId = "";
+        string cwd = "";
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -51,6 +53,12 @@ static class Program
                 case "--type" when i + 1 < args.Length:
                     type = args[++i].ToLowerInvariant();
                     break;
+                case "--session-id" when i + 1 < args.Length:
+                    sessionId = args[++i];
+                    break;
+                case "--cwd" when i + 1 < args.Length:
+                    cwd = args[++i];
+                    break;
             }
         }
 
@@ -60,7 +68,7 @@ static class Program
             // Read from file if it's a file path
             if (File.Exists(saveQuestion))
                 saveQuestion = File.ReadAllText(saveQuestion, Encoding.UTF8);
-            ResponseHistory.SaveQuestion(saveQuestion.Replace("\\n", "\n").Replace("\\t", "\t").Trim());
+            ResponseHistory.SaveQuestion(saveQuestion.Replace("\\n", "\n").Replace("\\t", "\t").Trim(), sessionId, cwd);
             return;
         }
 
@@ -71,17 +79,17 @@ static class Program
         message = message.Replace("\\n", "\n").Replace("\\t", "\t");
 
         // Save response to history (completes pending question entry)
-        ResponseHistory.SaveResponse(title, message, type);
+        ResponseHistory.SaveResponse(title, message, type, sessionId, cwd);
 
         using var mutex = new Mutex(true, MutexName, out bool isNewInstance);
 
         if (!isNewInstance)
         {
-            SendToPipe(title, message, type);
+            SendToPipe(title, message, type, sessionId, cwd);
             return;
         }
 
-        Application.Run(new PopupAppContext(title, message, type));
+        Application.Run(new PopupAppContext(title, message, type, sessionId, cwd));
     }
 
     private static void RunInstalledInstance()
@@ -99,8 +107,10 @@ static class Program
         string title = latest?.Title ?? "Claude Code";
         string message = latest?.Message ?? "No notifications yet. Claude will notify you here.";
         string type = latest?.Type ?? NotificationType.Info;
+        string sessionId = latest?.SessionId ?? "";
+        string cwd = latest?.Cwd ?? "";
 
-        Application.Run(new PopupAppContext(title, message, type));
+        Application.Run(new PopupAppContext(title, message, type, sessionId, cwd));
     }
 
     private static bool IsRunningFromInstallDir()
@@ -122,13 +132,13 @@ static class Program
         }
     }
 
-    private static void SendToPipe(string title, string message, string type)
+    private static void SendToPipe(string title, string message, string type, string sessionId = "", string cwd = "")
     {
         try
         {
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(3000);
-            var payload = JsonSerializer.Serialize(new { title, message, type });
+            var payload = JsonSerializer.Serialize(new { title, message, type, sessionId, cwd });
             var bytes = Encoding.UTF8.GetBytes(payload);
             client.Write(bytes, 0, bytes.Length);
         }

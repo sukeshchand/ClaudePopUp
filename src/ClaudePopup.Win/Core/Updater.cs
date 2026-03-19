@@ -27,10 +27,9 @@ static class Updater
             // Step 1: Copy new exe from network to local staging file
             File.Copy(sourceExe, updateExe, overwrite: true);
 
-            // Step 2: Regenerate the hook script (in case it changed)
-            RegenerateHookScript(currentExe);
-
-            // Step 3: Write the updater batch script
+            // Step 2: Write the updater batch script
+            // Note: Hook script regeneration happens on startup (see EnsureHookScript)
+            // so the NEW exe updates the script when it launches.
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("timeout /t 2 /nobreak >nul");
@@ -58,7 +57,11 @@ static class Updater
         }
     }
 
-    private static void RegenerateHookScript(string exePath)
+    /// <summary>
+    /// Ensures the hook script on disk matches this exe's version.
+    /// Called on startup so the new exe always writes the latest script.
+    /// </summary>
+    public static void EnsureHookScript(string exePath)
     {
         try
         {
@@ -71,9 +74,11 @@ static class Updater
             string ps1Content = $@"[Console]::InputEncoding = [System.Text.Encoding]::UTF8
 $inputJson = [Console]::In.ReadToEnd()
 
-$title    = ""Claude Code""
-$message  = ""Claude finished.""
-$type     = ""success""
+$title     = ""Claude Code""
+$message   = ""Claude finished.""
+$type      = ""success""
+$sessionId = """"
+$cwd       = """"
 
 $exePath = ""{exePath}""
 
@@ -81,12 +86,19 @@ if ($inputJson) {{
     try {{
         $payload = $inputJson | ConvertFrom-Json
 
+        # Extract session context
+        if ($payload.session_id) {{ $sessionId = $payload.session_id }}
+        if ($payload.cwd)        {{ $cwd = $payload.cwd }}
+
         if ($payload.hook_event_name -eq ""UserPromptSubmit"") {{
             # Save question to history via ClaudePopup and exit
             if ($payload.prompt) {{
                 $qFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ""claudepopup_question.txt"")
                 [System.IO.File]::WriteAllText($qFile, $payload.prompt, [System.Text.Encoding]::UTF8)
-                Start-Process -FilePath $exePath -ArgumentList ""--save-question"", ""`""$qFile`"""" -WindowStyle Hidden
+                $qArgs = @(""--save-question"", ""`""$qFile`"""")
+                if ($sessionId) {{ $qArgs += ""--session-id"", $sessionId }}
+                if ($cwd)       {{ $qArgs += ""--cwd"", ""`""$cwd`"""" }}
+                Start-Process -FilePath $exePath -ArgumentList $qArgs -WindowStyle Hidden
             }}
             exit 0
         }}
@@ -112,6 +124,8 @@ $msgFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ""claudepo
 [System.IO.File]::WriteAllText($msgFile, $message, [System.Text.Encoding]::UTF8)
 
 $argList = @(""--title"", ""`""$title`"""", ""--message-file"", ""`""$msgFile`"""", ""--type"", $type)
+if ($sessionId) {{ $argList += ""--session-id"", $sessionId }}
+if ($cwd)       {{ $argList += ""--cwd"", ""`""$cwd`"""" }}
 Start-Process -FilePath $exePath -ArgumentList $argList -WindowStyle Hidden";
 
             File.WriteAllText(ps1Path, ps1Content, Encoding.UTF8);

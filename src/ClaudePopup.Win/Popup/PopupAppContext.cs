@@ -13,13 +13,16 @@ class PopupAppContext : ApplicationContext
     private Icon _appIcon;
     private SettingsForm? _settingsForm;
 
-    public PopupAppContext(string initialTitle, string initialMessage, string initialType)
+    public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "")
     {
         var theme = Themes.LoadSaved();
         _appIcon = Themes.CreateAppIcon(theme.Primary);
 
+        // Ensure hook script matches this exe version (critical after updates)
+        Updater.EnsureHookScript(Application.ExecutablePath);
+
         _popupForm = new PopupForm(theme);
-        _popupForm.ShowPopup(initialTitle, initialMessage, initialType);
+        _popupForm.ShowPopup(initialTitle, initialMessage, initialType, sessionId, cwd);
 
         _trayIcon = new NotifyIcon
         {
@@ -149,7 +152,9 @@ class PopupAppContext : ApplicationContext
                         _popupForm.Invoke(() => _popupForm.ShowPopup(
                             msg.title ?? "Claude Code",
                             msg.message ?? "Task completed.",
-                            msg.type ?? NotificationType.Info));
+                            msg.type ?? NotificationType.Info,
+                            msg.sessionId ?? "",
+                            msg.cwd ?? ""));
                     }
                 }
             }
@@ -162,5 +167,5 @@ class PopupAppContext : ApplicationContext
         }
     }
 
-    private record PipeMessage(string? title, string? message, string? type);
+    private record PipeMessage(string? title, string? message, string? type, string? sessionId, string? cwd);
 }

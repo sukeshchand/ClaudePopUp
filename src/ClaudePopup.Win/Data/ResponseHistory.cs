@@ -3,12 +3,12 @@ using System.Text.Json;
 
 namespace ClaudePopup;
 
-record HistoryEntry(string Title, string Message, string Question, string Type, DateTime Timestamp);
+record HistoryEntry(string Title, string Message, string Question, string Type, DateTime Timestamp, string SessionId = "", string Cwd = "");
 
 /// <summary>
 /// Lightweight index entry cached in memory (no message/question text).
 /// </summary>
-record HistoryIndex(string Title, string Type, DateTime Timestamp, string DayFile, int Index);
+record HistoryIndex(string Title, string Type, DateTime Timestamp, string DayFile, int Index, string SessionId = "", string Cwd = "");
 
 static class ResponseHistory
 {
@@ -29,16 +29,16 @@ static class ResponseHistory
     private static string GetDayFile(DateTime date)
         => Path.Combine(_historyDir, $"{date:yyyyMMdd}.json");
 
-    public static void SaveQuestion(string question)
+    public static void SaveQuestion(string question, string sessionId = "", string cwd = "")
     {
         if (!IsEnabled || string.IsNullOrWhiteSpace(question)) return;
 
         var entries = LoadDayEntries(DateTime.Now);
-        entries.Add(new HistoryEntry("Claude Code", "", question.Trim(), NotificationType.Pending, DateTime.Now));
+        entries.Add(new HistoryEntry("Claude Code", "", question.Trim(), NotificationType.Pending, DateTime.Now, sessionId, cwd));
         WriteDay(DateTime.Now, entries);
     }
 
-    public static void SaveResponse(string title, string message, string type)
+    public static void SaveResponse(string title, string message, string type, string sessionId = "", string cwd = "")
     {
         if (!IsEnabled) return;
 
@@ -47,11 +47,11 @@ static class ResponseHistory
         if (entries.Count > 0 && entries[^1].Type == NotificationType.Pending)
         {
             var pending = entries[^1];
-            entries[^1] = pending with { Title = title, Message = message, Type = type, Timestamp = DateTime.Now };
+            entries[^1] = pending with { Title = title, Message = message, Type = type, Timestamp = DateTime.Now, SessionId = sessionId, Cwd = cwd };
         }
         else
         {
-            entries.Add(new HistoryEntry(title, message, "", type, DateTime.Now));
+            entries.Add(new HistoryEntry(title, message, "", type, DateTime.Now, sessionId, cwd));
         }
 
         WriteDay(DateTime.Now, entries);
@@ -110,7 +110,7 @@ static class ResponseHistory
                     for (int i = 0; i < entries.Count; i++)
                     {
                         var e = entries[i];
-                        index.Add(new HistoryIndex(e.Title, e.Type, e.Timestamp, file, i));
+                        index.Add(new HistoryIndex(e.Title, e.Type, e.Timestamp, file, i, e.SessionId, e.Cwd));
                     }
                 }
                 catch (Exception ex)
@@ -165,6 +165,45 @@ static class ResponseHistory
             Debug.WriteLine($"Failed to write history: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Returns index entries for today only, ordered by timestamp.
+    /// </summary>
+    public static List<HistoryIndex> LoadTodayIndex()
+    {
+        var todayFile = GetDayFile(DateTime.Now);
+        return LoadIndex().Where(i => string.Equals(i.DayFile, todayFile, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(i => i.Timestamp).ToList();
+    }
+
+    /// <summary>
+    /// Returns distinct CWD folder paths from today's entries (non-empty only).
+    /// </summary>
+    public static List<string> GetTodayDistinctCwd()
+        => LoadTodayIndex().Where(i => !string.IsNullOrEmpty(i.Cwd))
+            .Select(i => i.Cwd).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// Returns distinct SessionId values from today's entries (non-empty only),
+    /// paired with the CWD for display context.
+    /// </summary>
+    public static List<(string SessionId, string Cwd)> GetTodayDistinctSessions()
+        => LoadTodayIndex().Where(i => !string.IsNullOrEmpty(i.SessionId))
+            .GroupBy(i => i.SessionId)
+            .Select(g => (g.Key, g.First().Cwd))
+            .ToList();
+
+    /// <summary>
+    /// Returns today's entries filtered by CWD, ordered by timestamp.
+    /// </summary>
+    public static List<HistoryIndex> FilterTodayByCwd(string cwd)
+        => LoadTodayIndex().Where(i => string.Equals(i.Cwd, cwd, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>
+    /// Returns today's entries filtered by SessionId, ordered by timestamp.
+    /// </summary>
+    public static List<HistoryIndex> FilterTodayBySession(string sessionId)
+        => LoadTodayIndex().Where(i => string.Equals(i.SessionId, sessionId, StringComparison.Ordinal)).ToList();
 
     public static void Invalidate() => _cachedIndex = null;
 }

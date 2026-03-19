@@ -47,6 +47,12 @@ class PopupForm : Form
     private int _historyIndex = -1; // -1 = showing live/current message
     private bool _viewingHistory;
 
+    private readonly RoundedButton _filterButton;
+    private FilterMode _filterMode = FilterMode.Session;
+    private string _filterValue = "";
+    private string _currentSessionId = "";
+    private List<HistoryIndex>? _filteredIndex;
+
     private readonly Label _updateAvailableLabel;
     private readonly Label _updateButton;
 
@@ -201,10 +207,25 @@ class PopupForm : Form
             Visible = false,
         };
 
+        _filterButton = new RoundedButton
+        {
+            Text = "\uE14C",  // Group list icon from Segoe MDL2 Assets
+            Font = new Font("Segoe MDL2 Assets", 10f),
+            Size = new Size(28, 26),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextSecondary,
+            Cursor = Cursors.Hand,
+            Visible = false,
+        };
+        _filterButton.FlatAppearance.BorderSize = 0;
+        _filterButton.FlatAppearance.MouseOverBackColor = theme.Primary;
+        _filterButton.Click += (_, _) => ShowFilterDialog();
+
         _infoPanel.Controls.AddRange(new Control[]
         {
             _iconLabel, _titleLabel, _subtitleLabel,
-            _prevButton, _navLabel, _nextButton
+            _prevButton, _navLabel, _nextButton, _filterButton
         });
 
         // --- Footer (bottom, docked) ---
@@ -315,6 +336,8 @@ class PopupForm : Form
         _sparkleTimer = new System.Windows.Forms.Timer { Interval = 40 };
         _sparkleTimer.Tick += SparkleTimer_Tick;
 
+        Shown += (_, _) => { UpdateHistoryNav(); PositionControls(); };
+
         InitializeWebView2();
     }
 
@@ -330,17 +353,28 @@ class PopupForm : Form
             _footerPanel.ClientSize.Width - _versionLabel.Width - 12,
             _footerPanel.ClientSize.Height - _versionLabel.Height - 6);
 
-        // Nav buttons right-aligned in info panel
+        // Nav buttons right-aligned in info panel, session info below subtitle
         var infoPanel = _prevButton.Parent;
         if (infoPanel != null)
         {
             int ipw = infoPanel.ClientSize.Width;
 
-            // Nav buttons right-aligned in info panel
+            // Nav buttons and filter button right-aligned in info panel
             if (_prevButton.Visible)
             {
                 int navY = (InfoBarHeight - _prevButton.Height) / 2;
-                int navX = ipw - _nextButton.Width - 12;
+                int navX = ipw - 12;
+
+                // Filter button (rightmost)
+                if (_filterButton.Visible)
+                {
+                    navX -= _filterButton.Width;
+                    _filterButton.Location = new Point(navX, navY);
+                    navX -= 6;
+                }
+
+                // Next button
+                navX -= _nextButton.Width;
                 _nextButton.Location = new Point(navX, navY);
                 navX -= (8 + _navLabel.PreferredWidth);
                 _navLabel.Location = new Point(navX, navY + (_prevButton.Height - _navLabel.Height) / 2);
@@ -418,6 +452,18 @@ class PopupForm : Form
         _nextButton.FlatAppearance.MouseOverBackColor = theme.Primary;
         _navLabel.ForeColor = theme.TextSecondary;
 
+        _filterButton.FlatAppearance.MouseOverBackColor = theme.Primary;
+        if (_filterMode != FilterMode.None)
+        {
+            _filterButton.BackColor = theme.Primary;
+            _filterButton.ForeColor = Color.White;
+        }
+        else
+        {
+            _filterButton.BackColor = theme.PrimaryDim;
+            _filterButton.ForeColor = theme.TextSecondary;
+        }
+
         _updateAvailableLabel.ForeColor = theme.SuccessColor;
         _updateButton.ForeColor = theme.Primary;
 
@@ -494,7 +540,7 @@ class PopupForm : Form
         Hide();
     }
 
-    public void ShowPopup(string title, string message, string type)
+    public void ShowPopup(string title, string message, string type, string sessionId = "", string cwd = "")
     {
         // Always store latest message even if snoozed
         _lastMessage = message;
@@ -503,17 +549,35 @@ class PopupForm : Form
         // Reset to live view
         _viewingHistory = false;
         _historyIndex = -1;
+        _filteredIndex = null;
 
         // If snoozed, don't show the popup
         if (IsSnoozed)
             return;
 
-        // Read question from the latest history entry
+        // Read question and session info from the latest history entry
         ResponseHistory.Invalidate();
         var latest = ResponseHistory.GetLatest();
         string question = latest?.Question ?? "";
+        // Prefer passed-in session info, fall back to history entry
+        if (string.IsNullOrEmpty(sessionId)) sessionId = latest?.SessionId ?? "";
+        if (string.IsNullOrEmpty(cwd)) cwd = latest?.Cwd ?? "";
 
-        DisplayMessage(title, message, type, question);
+        // Default filter to current session (even if user had folder filter active)
+        if (!string.IsNullOrEmpty(sessionId))
+        {
+            _currentSessionId = sessionId;
+            _filterMode = FilterMode.Session;
+            _filterValue = sessionId;
+            _filteredIndex = ResponseHistory.FilterTodayBySession(sessionId);
+        }
+        else
+        {
+            _filterMode = FilterMode.None;
+            _filterValue = "";
+        }
+
+        DisplayMessage(title, message, type, question, sessionId, cwd);
 
         // New funny quote + restart typewriter
         _funnyText = FunnyQuotes.Lines[_rng.Next(FunnyQuotes.Lines.Length)];
@@ -566,7 +630,7 @@ class PopupForm : Form
         }
     }
 
-    private void DisplayMessage(string title, string message, string type, string question = "")
+    private void DisplayMessage(string title, string message, string type, string question = "", string sessionId = "", string cwd = "")
     {
         ApplyTypeColors(type);
         Text = title;
@@ -609,9 +673,21 @@ class PopupForm : Form
         }
         int prefixHeight = string.IsNullOrWhiteSpace(question) ? 40 : 100; // user-block + claude-label
         int estimatedContentHeight = Math.Max(180, wrappedLines * 28 + prefixHeight + 60);
-        int maxHeight = (int)(Screen.FromControl(this).WorkingArea.Height * 0.9);
-        int totalHeight = Math.Min(maxHeight, HeaderHeight + 2 + InfoBarHeight + estimatedContentHeight + FooterHeight);
-        ClientSize = new Size(Math.Max(ClientSize.Width, 800), totalHeight);
+        var workingArea = Screen.FromControl(this).WorkingArea;
+        int maxHeight = (int)(workingArea.Height * 0.9);
+        int newClientW = Math.Max(ClientSize.Width, 800);
+        int newClientH = Math.Min(maxHeight, HeaderHeight + 2 + InfoBarHeight + estimatedContentHeight + FooterHeight);
+        ClientSize = new Size(newClientW, newClientH);
+
+        // Only reposition if any corner is outside the current screen
+        int curLeft = Left, curTop = Top;
+        if (curLeft < workingArea.Left || curTop < workingArea.Top ||
+            curLeft + Width > workingArea.Right || curTop + Height > workingArea.Bottom)
+        {
+            int newLeft = Math.Max(workingArea.Left, Math.Min(curLeft, workingArea.Right - Width));
+            int newTop = Math.Max(workingArea.Top, Math.Min(curTop, workingArea.Bottom - Height));
+            Location = new Point(newLeft, newTop);
+        }
 
         _snoozeCheckBox.Checked = IsSnoozed;
 
@@ -627,7 +703,16 @@ class PopupForm : Form
     private void NavigateHistory(int direction)
     {
         ResponseHistory.Invalidate();
-        var index = ResponseHistory.LoadIndex();
+
+        // Refresh filtered index if filter is active
+        if (_filterMode != FilterMode.None)
+        {
+            _filteredIndex = _filterMode == FilterMode.Cwd
+                ? ResponseHistory.FilterTodayByCwd(_filterValue)
+                : ResponseHistory.FilterTodayBySession(_filterValue);
+        }
+
+        var index = GetActiveIndex();
         if (index.Count == 0) return;
 
         if (!_viewingHistory)
@@ -641,47 +726,104 @@ class PopupForm : Form
 
         var entry = ResponseHistory.LoadEntry(index[_historyIndex]);
         if (entry != null)
-            DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question);
+            DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd);
+    }
+
+    private void ShowFilterDialog()
+    {
+        using var dlg = new FilterDialog(_theme, _filterMode, _filterValue);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            _filterMode = dlg.SelectedMode;
+            _filterValue = dlg.SelectedValue;
+            _filteredIndex = null;
+
+            if (_filterMode != FilterMode.None)
+            {
+                // Build filtered list and navigate to first entry
+                ResponseHistory.Invalidate();
+                _filteredIndex = _filterMode == FilterMode.Cwd
+                    ? ResponseHistory.FilterTodayByCwd(_filterValue)
+                    : ResponseHistory.FilterTodayBySession(_filterValue);
+
+                if (_filteredIndex.Count > 0)
+                {
+                    _viewingHistory = true;
+                    _historyIndex = _filteredIndex.Count - 1;
+                    var entry = ResponseHistory.LoadEntry(_filteredIndex[_historyIndex]);
+                    if (entry != null)
+                        DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd);
+                }
+            }
+            else
+            {
+                // Clear filter — go back to full index
+                _viewingHistory = false;
+                _historyIndex = -1;
+                UpdateHistoryNav();
+                PositionControls();
+            }
+        }
+    }
+
+    private List<HistoryIndex> GetActiveIndex()
+    {
+        if (_filterMode != FilterMode.None && _filteredIndex != null)
+            return _filteredIndex;
+        return ResponseHistory.LoadIndex();
     }
 
     public void UpdateHistoryNav()
     {
-        var index = ResponseHistory.LoadIndex();
+        var index = GetActiveIndex();
         bool showNav = ResponseHistory.IsEnabled && index.Count > 0;
 
         _prevButton.Visible = showNav;
         _nextButton.Visible = showNav;
         _navLabel.Visible = showNav;
+        _filterButton.Visible = ResponseHistory.IsEnabled && ResponseHistory.LoadIndex().Count > 0;
+
+        // Update filter button appearance based on active filter
+        if (_filterMode != FilterMode.None)
+        {
+            _filterButton.BackColor = _theme.Primary;
+            _filterButton.ForeColor = Color.White;
+        }
+        else
+        {
+            _filterButton.BackColor = _theme.PrimaryDim;
+            _filterButton.ForeColor = _theme.TextSecondary;
+        }
 
         if (showNav)
         {
+            string filterLabel = "";
+            if (_filterMode == FilterMode.Cwd)
+            {
+                string folder = Path.GetFileName(_filterValue.TrimEnd('/', '\\'));
+                filterLabel = $" [{folder}]";
+            }
+            else if (_filterMode == FilterMode.Session)
+            {
+                string shortId = _filterValue.Length > 8 ? _filterValue[..8] : _filterValue;
+                filterLabel = $" [{shortId}]";
+            }
+
             if (_viewingHistory)
             {
-                _navLabel.Text = $"{_historyIndex + 1} / {index.Count}";
+                _navLabel.Text = $"{_historyIndex + 1} / {index.Count}{filterLabel}";
                 _prevButton.Enabled = _historyIndex > 0;
                 _nextButton.Enabled = _historyIndex < index.Count - 1;
             }
             else
             {
-                _navLabel.Text = $"Latest ({index.Count})";
+                _navLabel.Text = $"Latest ({index.Count}){filterLabel}";
                 _prevButton.Enabled = index.Count > 0;
                 _nextButton.Enabled = false;
             }
-
-            // Position nav buttons at the right side of the info panel, not overlapping icon/title
-            var infoPanel = _prevButton.Parent;
-            if (infoPanel != null)
-            {
-                int ipw = infoPanel.ClientSize.Width;
-                int navY = (InfoBarHeight - _prevButton.Height) / 2;
-                int navX = ipw - _nextButton.Width - 12;
-                _nextButton.Location = new Point(navX, navY);
-                navX -= (8 + _navLabel.PreferredWidth);
-                _navLabel.Location = new Point(navX, navY + (_prevButton.Height - _navLabel.Height) / 2);
-                navX -= (8 + _prevButton.Width);
-                _prevButton.Location = new Point(navX, navY);
-            }
         }
+
+        PositionControls();
     }
 
     public void BringToForeground()
