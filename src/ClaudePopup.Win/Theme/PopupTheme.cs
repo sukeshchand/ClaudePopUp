@@ -172,8 +172,7 @@ static class Themes
     public static void Save(PopupTheme theme)
     {
         var settings = AppSettings.Load();
-        settings.Theme = theme.Name;
-        AppSettings.Save(settings);
+        AppSettings.Save(settings with { Theme = theme.Name });
     }
 
     /// <summary>
@@ -193,7 +192,7 @@ static class Themes
         // "C" letter in white
         using var font = new Font("Segoe UI", 16f, FontStyle.Bold);
         using var textBrush = new SolidBrush(Color.White);
-        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         g.DrawString("C", font, textBrush, new RectangleF(0, 0, 32, 32), sf);
 
         // Outer glow ring

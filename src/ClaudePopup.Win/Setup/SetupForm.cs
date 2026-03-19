@@ -1,6 +1,7 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -11,23 +12,7 @@ namespace ClaudePopup;
 
 class SetupForm : Form
 {
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    private const int SW_RESTORE = 9;
-
-    private static readonly Color BgDark = Color.FromArgb(15, 20, 30);
-    private static readonly Color BgCard = Color.FromArgb(18, 24, 38);
-    private static readonly Color BluePrimary = Color.FromArgb(56, 132, 244);
-    private static readonly Color BlueLight = Color.FromArgb(96, 165, 250);
-    private static readonly Color BlueDim = Color.FromArgb(30, 58, 110);
-    private static readonly Color GreenPrimary = Color.FromArgb(52, 211, 153);
-    private static readonly Color TextPrimary = Color.FromArgb(235, 240, 255);
-    private static readonly Color TextSecondary = Color.FromArgb(160, 175, 210);
-    private static readonly Color BorderColor = Color.FromArgb(40, 55, 85);
+    private static readonly PopupTheme _theme = Themes.Default;
 
     private string? _webView2UserDataFolder;
 
@@ -51,7 +36,7 @@ class SetupForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = BgDark;
+        BackColor = _theme.BgDark;
         ClientSize = new Size(860, 740);
         Icon = SystemIcons.Information;
 
@@ -72,7 +57,7 @@ class SetupForm : Form
         {
             Dock = DockStyle.Top,
             Height = 130,
-            BackColor = BgCard,
+            BackColor = _theme.BgHeader,
             Padding = new Padding(0),
         };
 
@@ -80,7 +65,7 @@ class SetupForm : Form
         {
             Text = "ClaudePopup Setup",
             Font = new Font("Segoe UI Semibold", 18f, FontStyle.Bold),
-            ForeColor = TextPrimary,
+            ForeColor = _theme.TextPrimary,
             AutoSize = true,
             Location = new Point(28, 16),
             BackColor = Color.Transparent,
@@ -90,7 +75,7 @@ class SetupForm : Form
         {
             Text = "Install the popup, hook script, and configure Claude Code — all in one click.",
             Font = new Font("Segoe UI", 10f),
-            ForeColor = TextSecondary,
+            ForeColor = _theme.TextSecondary,
             AutoSize = true,
             Location = new Point(28, 46),
             BackColor = Color.Transparent,
@@ -103,20 +88,20 @@ class SetupForm : Form
             Size = new Size(240, 44),
             Location = new Point(28, 76),
             FlatStyle = FlatStyle.Flat,
-            BackColor = BluePrimary,
+            BackColor = _theme.Primary,
             ForeColor = Color.White,
             Cursor = Cursors.Hand,
         };
         _installButton.FlatAppearance.BorderSize = 0;
-        _installButton.FlatAppearance.MouseOverBackColor = BlueLight;
-        _installButton.FlatAppearance.MouseDownBackColor = BlueDim;
+        _installButton.FlatAppearance.MouseOverBackColor = _theme.PrimaryLight;
+        _installButton.FlatAppearance.MouseDownBackColor = _theme.PrimaryDim;
         _installButton.Click += OnInstallClick;
 
         var accentLine = new Panel
         {
             Dock = DockStyle.Bottom,
             Height = 2,
-            BackColor = BluePrimary,
+            BackColor = _theme.Primary,
         };
 
         topPanel.Controls.AddRange(new Control[] { titleLabel, descLabel, _installButton, accentLine });
@@ -125,7 +110,7 @@ class SetupForm : Form
         var webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = BgDark,
+            DefaultBackgroundColor = _theme.BgDark,
         };
 
         // Add controls (order matters for Dock: Fill added first, Top overlays)
@@ -136,8 +121,8 @@ class SetupForm : Form
 
         Shown += async (_, _) =>
         {
-            ShowWindow(Handle, SW_RESTORE);
-            SetForegroundWindow(Handle);
+            NativeMethods.ShowWindow(Handle, NativeMethods.SW_RESTORE);
+            NativeMethods.SetForegroundWindow(Handle);
             BringToFront();
             Activate();
 
@@ -152,8 +137,9 @@ class SetupForm : Form
                 webView.CoreWebView2.Settings.IsZoomControlEnabled = false;
                 webView.NavigateToString(htmlContent);
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"SetupForm WebView2 init failed: {ex.Message}");
                 // WebView2 not available — hide silently, button still works
                 webView.Visible = false;
             }
@@ -166,7 +152,10 @@ class SetupForm : Form
                 if (_webView2UserDataFolder != null && Directory.Exists(_webView2UserDataFolder))
                     Directory.Delete(_webView2UserDataFolder, true);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"SetupForm WebView2 cleanup failed: {ex.Message}");
+            }
         };
     }
 
@@ -174,7 +163,7 @@ class SetupForm : Form
     {
         _installButton.Enabled = false;
         _installButton.Text = "Installing...";
-        _installButton.BackColor = BlueDim;
+        _installButton.BackColor = _theme.PrimaryDim;
 
         try
         {
@@ -183,7 +172,7 @@ class SetupForm : Form
             if (result.Success)
             {
                 _installButton.Text = "\u2713  Installed Successfully";
-                _installButton.BackColor = GreenPrimary;
+                _installButton.BackColor = _theme.SuccessColor;
 
                 MessageBox.Show(this,
                     result.Message,
@@ -194,7 +183,7 @@ class SetupForm : Form
             else
             {
                 _installButton.Text = "Installation Failed";
-                _installButton.BackColor = Color.FromArgb(248, 113, 113);
+                _installButton.BackColor = _theme.ErrorColor;
 
                 MessageBox.Show(this,
                     result.Message,
@@ -205,13 +194,13 @@ class SetupForm : Form
                 // Re-enable for retry
                 _installButton.Enabled = true;
                 _installButton.Text = "\u26A1  Retry Installation";
-                _installButton.BackColor = BluePrimary;
+                _installButton.BackColor = _theme.Primary;
             }
         }
         catch (Exception ex)
         {
             _installButton.Text = "Installation Failed";
-            _installButton.BackColor = Color.FromArgb(248, 113, 113);
+            _installButton.BackColor = _theme.ErrorColor;
 
             MessageBox.Show(this,
                 $"Error: {ex.Message}",
@@ -221,7 +210,7 @@ class SetupForm : Form
 
             _installButton.Enabled = true;
             _installButton.Text = "\u26A1  Retry Installation";
-            _installButton.BackColor = BluePrimary;
+            _installButton.BackColor = _theme.Primary;
         }
     }
 
@@ -455,9 +444,9 @@ Start-Process -FilePath $exePath -ArgumentList $argList -WindowStyle Hidden";
         string copyCmd = $@"New-Item -ItemType Directory -Force -Path ""{toolsDir}""
 Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 
-        string ps1Html = HtmlEncode(ps1Content);
-        string settingsHtml = HtmlEncode(settingsJson);
-        string copyCmdHtml = HtmlEncode(copyCmd);
+        string ps1Html = WebUtility.HtmlEncode(ps1Content);
+        string settingsHtml = WebUtility.HtmlEncode(settingsJson);
+        string copyCmdHtml = WebUtility.HtmlEncode(copyCmd);
 
         return $@"<!DOCTYPE html>
 <html>
@@ -639,7 +628,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 <p style=""color: #6888b8;"">If you prefer to set things up manually, follow these steps:</p>
 
 <h2><span class=""step"">1</span> Install the executable</h2>
-<p>Copy ClaudePopup to <span class=""path"">{HtmlEncode(toolsDir)}</span>:</p>
+<p>Copy ClaudePopup to <span class=""path"">{WebUtility.HtmlEncode(toolsDir)}</span>:</p>
 <div class=""code-block"">
     <div class=""code-header"">
         <span class=""lang"">PowerShell</span>
@@ -647,12 +636,12 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
     </div>
     <pre>{copyCmdHtml}</pre>
 </div>
-<p>The exe will be at: <span class=""path"">{HtmlEncode(installExePath)}</span></p>
+<p>The exe will be at: <span class=""path"">{WebUtility.HtmlEncode(installExePath)}</span></p>
 
 <hr class=""divider""/>
 
 <h2><span class=""step"">2</span> Create the PowerShell hook script</h2>
-<p>Save this file as: <span class=""path"">{HtmlEncode(hooksDir)}\\Show-ClaudePopup.ps1</span></p>
+<p>Save this file as: <span class=""path"">{WebUtility.HtmlEncode(hooksDir)}\\Show-ClaudePopup.ps1</span></p>
 <div class=""code-block"">
     <div class=""code-header"">
         <span class=""lang"">PowerShell</span>
@@ -664,7 +653,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 <hr class=""divider""/>
 
 <h2><span class=""step"">3</span> Configure Claude Code hooks</h2>
-<p>Add this to your settings file: <span class=""path"">{HtmlEncode(settingsPath)}</span></p>
+<p>Add this to your settings file: <span class=""path"">{WebUtility.HtmlEncode(settingsPath)}</span></p>
 <div class=""info-box"">
     <span class=""label"">Tip:</span> If you already have hooks configured, merge the <code>Stop</code> and <code>Notification</code> entries into your existing <code>hooks</code> object.
 </div>
@@ -685,7 +674,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
         <span class=""lang"">PowerShell</span>
         <button class=""copy-btn"" onclick=""copyBlock(this)"">Copy</button>
     </div>
-    <pre>& ""{HtmlEncode(installExePath)}"" --title ""Test"" --message ""Hello from ClaudePopup!"" --type success</pre>
+    <pre>& ""{WebUtility.HtmlEncode(installExePath)}"" --title ""Test"" --message ""Hello from ClaudePopup!"" --type success</pre>
 </div>
 
 <hr class=""divider""/>
@@ -741,14 +730,4 @@ function copyBlock(btn) {{
 </body>
 </html>";
     }
-
-    private static string HtmlEncode(string text)
-    {
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\"", "&quot;");
-    }
 }
-

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace ClaudePopup;
@@ -21,8 +22,7 @@ static class ResponseHistory
         set
         {
             var settings = AppSettings.Load();
-            settings.HistoryEnabled = value;
-            AppSettings.Save(settings);
+            AppSettings.Save(settings with { HistoryEnabled = value });
         }
     }
 
@@ -34,7 +34,7 @@ static class ResponseHistory
         if (!IsEnabled || string.IsNullOrWhiteSpace(question)) return;
 
         var entries = LoadDayEntries(DateTime.Now);
-        entries.Add(new HistoryEntry("Claude Code", "", question.Trim(), "pending", DateTime.Now));
+        entries.Add(new HistoryEntry("Claude Code", "", question.Trim(), NotificationType.Pending, DateTime.Now));
         WriteDay(DateTime.Now, entries);
     }
 
@@ -44,7 +44,7 @@ static class ResponseHistory
 
         var entries = LoadDayEntries(DateTime.Now);
 
-        if (entries.Count > 0 && entries[^1].Type == "pending")
+        if (entries.Count > 0 && entries[^1].Type == NotificationType.Pending)
         {
             var pending = entries[^1];
             entries[^1] = pending with { Title = title, Message = message, Type = type, Timestamp = DateTime.Now };
@@ -80,7 +80,10 @@ static class ResponseHistory
             if (entries != null && idx.Index < entries.Count)
                 return entries[idx.Index];
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load history entry: {ex.Message}");
+        }
         return null;
     }
 
@@ -110,10 +113,16 @@ static class ResponseHistory
                         index.Add(new HistoryIndex(e.Title, e.Type, e.Timestamp, file, i));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to read history file {file}: {ex.Message}");
+                }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load history index: {ex.Message}");
+        }
 
         // Keep only last 100
         if (index.Count > 100)
@@ -134,7 +143,10 @@ static class ResponseHistory
                 return JsonSerializer.Deserialize<List<HistoryEntry>>(json) ?? new List<HistoryEntry>();
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load day entries: {ex.Message}");
+        }
 
         return new List<HistoryEntry>();
     }
@@ -148,7 +160,10 @@ static class ResponseHistory
             File.WriteAllText(GetDayFile(date), json);
             _cachedIndex = null;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to write history: {ex.Message}");
+        }
     }
 
     public static void Invalidate() => _cachedIndex = null;

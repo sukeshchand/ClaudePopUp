@@ -1,4 +1,4 @@
-using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -39,7 +39,7 @@ static class MarkdownRenderer
 
             if (inCodeBlock)
             {
-                sb.AppendLine(HtmlEncode(line));
+                sb.AppendLine(WebUtility.HtmlEncode(line));
                 continue;
             }
 
@@ -158,7 +158,7 @@ static class MarkdownRenderer
 
     private static string InlineMarkdown(string text)
     {
-        text = HtmlEncode(text);
+        text = WebUtility.HtmlEncode(text);
 
         // Bold: **text** or __text__
         text = Regex.Replace(text, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
@@ -181,15 +181,6 @@ static class MarkdownRenderer
         if (trimmed.StartsWith("|")) trimmed = trimmed[1..];
         if (trimmed.EndsWith("|")) trimmed = trimmed[..^1];
         return trimmed.Split('|').Select(c => c.Trim()).ToArray();
-    }
-
-    private static string HtmlEncode(string text)
-    {
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\"", "&quot;");
     }
 
     private static string WrapInHtmlDocument(string body, string accentColorHex, string textColorHex, string headingColorHex, string bgColorHex, string codeBgHex)

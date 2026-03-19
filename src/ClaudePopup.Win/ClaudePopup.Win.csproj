@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>ClaudePopup</AssemblyName>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -17,6 +18,7 @@
 
   <!-- Exclude XML doc files and PDB from publish output -->
   <PropertyGroup>
+    <PublishDir>..\..\release\</PublishDir>
     <PublishDocumentationFiles>false</PublishDocumentationFiles>
     <DebugType>none</DebugType>
   </PropertyGroup>

@@ -1,15 +1,16 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ClaudePopup;
 
-class AppSettingsData
+record AppSettingsData
 {
     [JsonPropertyName("theme")]
-    public string Theme { get; set; } = "Ocean Blue";
+    public string Theme { get; init; } = "Ocean Blue";
 
     [JsonPropertyName("historyEnabled")]
-    public bool HistoryEnabled { get; set; } = false;
+    public bool HistoryEnabled { get; init; } = false;
 }
 
 static class AppSettings
@@ -34,7 +35,10 @@ static class AppSettings
                 return _cached;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load settings: {ex.Message}");
+        }
 
         _cached = new AppSettingsData();
         return _cached;
@@ -49,7 +53,10 @@ static class AppSettings
             string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_settingsPath, json);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to save settings: {ex.Message}");
+        }
     }
 
     public static string DataDir => _dataDir;
