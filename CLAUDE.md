@@ -37,15 +37,19 @@ There are no tests or linting configured.
 src/ClaudePopup.Win/
   Program.cs                 Entry point, CLI arg parsing, single-instance mutex, pipe client
   Core/
+    AppVersion.cs            Central version constant
+    AppSettings.cs           Immutable record + JSON persistence (_data/settings.json)
     NativeMethods.cs         Shared P/Invoke (SetForegroundWindow, ShowWindow)
     NotificationType.cs      String constants: Info, Success, Error, Pending
-    AppSettings.cs           Immutable record + JSON persistence (_data/settings.json)
+    UpdateChecker.cs         Hourly timer that checks network path for new versions
+    UpdateMetadata.cs        Record for deserializing metadata.json from update location
+    Updater.cs               Downloads new exe, writes batch updater script, relaunches
   Popup/
-    PopupAppContext.cs        Tray icon, context menu, pipe server loop
-    PopupForm.cs             Main notification window (WebView2, animation, history nav)
+    PopupAppContext.cs        Tray icon, context menu, pipe server loop, starts UpdateChecker
+    PopupForm.cs             Main notification window (WebView2, animation, history nav, update UI)
     Sparkle.cs               Particle animation data class
   Settings/
-    SettingsForm.cs          Settings dialog (theme picker, history toggle, snooze)
+    SettingsForm.cs          Settings dialog (theme picker, history, snooze, update location)
   Setup/
     SetupForm.cs             Installation wizard (copies exe, writes hook script, merges settings)
     SetupForm.resx           Designer resources
@@ -58,11 +62,14 @@ src/ClaudePopup.Win/
     RoundedButton.cs         Custom Button with rounded corners via GDI+
   Data/
     ResponseHistory.cs       Daily JSON history files in _data/history/, cached index
+
+publish.ps1                  Automates version bump, publish, metadata generation, network deploy
 ```
 
 ### Execution Flow
 
-1. **First instance with no args** → opens `SetupForm` (installation wizard)
+1. **First instance with no args from non-install dir** → opens `SetupForm` (installation wizard)
+1. **First instance with no args from install dir** → opens popup with last history entry (or welcome)
 2. **First instance with args** (`--title`, `--message`, `--type`, `--message-file`, `--save-question`) → creates `PopupAppContext` with tray icon, starts pipe server, shows `PopupForm`
 3. **Subsequent instances** → detect mutex, send args via named pipe to the running instance, then exit
 

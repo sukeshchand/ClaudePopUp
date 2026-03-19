@@ -212,6 +212,171 @@ class SettingsForm : Form
         Controls.Add(sep2);
         y += 18;
 
+        // === Update Section ===
+        var updateSectionLabel = new Label
+        {
+            Text = "UPDATES",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(leftMargin, y),
+            BackColor = Color.Transparent,
+        };
+        Controls.Add(updateSectionLabel);
+        y += 24;
+
+        var updatePathLabel = new Label
+        {
+            Text = "Update location (network path):",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(leftMargin, y),
+            BackColor = Color.Transparent,
+        };
+        Controls.Add(updatePathLabel);
+        y += 22;
+
+        var updatePathBox = new TextBox
+        {
+            Text = AppSettings.Load().UpdateLocation,
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = currentTheme.BgHeader,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(contentWidth - 40, 26),
+            Location = new Point(leftMargin, y),
+        };
+        updatePathBox.LostFocus += (_, _) =>
+        {
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
+        };
+        Controls.Add(updatePathBox);
+
+        var savePathButton = new RoundedButton
+        {
+            Text = "Save",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(34, 26),
+            Location = new Point(leftMargin + contentWidth - 34, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.PrimaryDim,
+            ForeColor = currentTheme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        savePathButton.FlatAppearance.BorderSize = 0;
+        savePathButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
+        savePathButton.Click += (_, _) =>
+        {
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
+            savePathButton.Text = "\u2713";
+            var resetTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            resetTimer.Tick += (_, _) => { savePathButton.Text = "Save"; resetTimer.Stop(); resetTimer.Dispose(); };
+            resetTimer.Start();
+        };
+        Controls.Add(savePathButton);
+        y += 34;
+
+        var checkNowButton = new RoundedButton
+        {
+            Text = "Check for Updates",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(140, 28),
+            Location = new Point(leftMargin, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.PrimaryDim,
+            ForeColor = currentTheme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        checkNowButton.FlatAppearance.BorderSize = 0;
+        checkNowButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
+
+        var checkResultLabel = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(leftMargin + 150, y + 5),
+            BackColor = Color.Transparent,
+        };
+
+        var updateLinkLabel = new Label
+        {
+            Text = "Install Update",
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Underline | FontStyle.Bold),
+            ForeColor = currentTheme.Primary,
+            BackColor = Color.Transparent,
+            AutoSize = true,
+            Cursor = Cursors.Hand,
+            Visible = false,
+        };
+        updateLinkLabel.Click += (_, _) =>
+        {
+            updateLinkLabel.Text = "Updating...";
+            updateLinkLabel.Enabled = false;
+            var result = Updater.Apply();
+            if (result.Success)
+            {
+                Application.Exit();
+            }
+            else
+            {
+                MessageBox.Show(this, result.Message, "Update Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                updateLinkLabel.Text = "Install Update";
+                updateLinkLabel.Enabled = true;
+            }
+        };
+
+        checkNowButton.Click += (_, _) =>
+        {
+            // Save the path first
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
+
+            checkNowButton.Enabled = false;
+            checkNowButton.Text = "Checking...";
+            checkResultLabel.Text = "";
+            updateLinkLabel.Visible = false;
+
+            UpdateChecker.CheckNow();
+            var meta = UpdateChecker.LatestMetadata;
+            if (meta != null)
+            {
+                checkResultLabel.ForeColor = currentTheme.SuccessColor;
+                checkResultLabel.Text = $"v{meta.Version} available";
+                updateLinkLabel.Visible = true;
+                updateLinkLabel.Location = new Point(
+                    checkResultLabel.Left + checkResultLabel.PreferredWidth + 10,
+                    checkResultLabel.Top);
+            }
+            else
+            {
+                checkResultLabel.ForeColor = currentTheme.TextSecondary;
+                checkResultLabel.Text = "You are up to date.";
+            }
+
+            checkNowButton.Enabled = true;
+            checkNowButton.Text = "Check for Updates";
+        };
+        Controls.Add(checkNowButton);
+        Controls.Add(checkResultLabel);
+        Controls.Add(updateLinkLabel);
+        y += 40;
+
+        // --- Separator ---
+        var sep3 = new Panel
+        {
+            BackColor = currentTheme.Border,
+            Location = new Point(leftMargin, y),
+            Size = new Size(contentWidth, 1),
+        };
+        Controls.Add(sep3);
+        y += 18;
+
         // --- Close button ---
         var closeButton = new RoundedButton
         {
@@ -233,7 +398,7 @@ class SettingsForm : Form
         // --- Version label ---
         var versionLabel = new Label
         {
-            Text = $"ClaudePopup v{PopupForm.Version}",
+            Text = $"ClaudePopup v{AppVersion.Current}",
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(60, 75, 105),
             AutoSize = true,
@@ -241,6 +406,10 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
         };
         Controls.Add(versionLabel);
+
+        // Adjust form height to fit content
+        ClientSize = new Size(ClientSize.Width, y + 38 + 40);
+        versionLabel.Location = new Point(leftMargin, ClientSize.Height - 26);
     }
 
     private void OnThemeCircleClick(object? sender, EventArgs e)

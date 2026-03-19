@@ -16,10 +16,13 @@ static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        // No arguments → show setup instructions (always new instance)
+        // No arguments → check if running from install directory
         if (args.Length == 0)
         {
-            Application.Run(new SetupForm());
+            if (IsRunningFromInstallDir())
+                RunInstalledInstance();
+            else
+                Application.Run(new SetupForm());
             return;
         }
 
@@ -79,6 +82,44 @@ static class Program
         }
 
         Application.Run(new PopupAppContext(title, message, type));
+    }
+
+    private static void RunInstalledInstance()
+    {
+        using var mutex = new Mutex(true, MutexName, out bool isNew);
+        if (!isNew)
+        {
+            // Already running — tell existing instance to bring itself to front
+            SendToPipe("Claude Code", "Claude is ready.", NotificationType.Info);
+            return;
+        }
+
+        // Load last history entry or show a default welcome
+        var latest = ResponseHistory.GetLatest();
+        string title = latest?.Title ?? "Claude Code";
+        string message = latest?.Message ?? "No notifications yet. Claude will notify you here.";
+        string type = latest?.Type ?? NotificationType.Info;
+
+        Application.Run(new PopupAppContext(title, message, type));
+    }
+
+    private static bool IsRunningFromInstallDir()
+    {
+        try
+        {
+            var exeDir = Path.GetDirectoryName(Application.ExecutablePath) ?? "";
+            var installDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".claude", "tools", "ClaudePopup");
+            return string.Equals(
+                Path.GetFullPath(exeDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(installDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void SendToPipe(string title, string message, string type)

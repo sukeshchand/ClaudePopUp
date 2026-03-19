@@ -11,6 +11,9 @@ record AppSettingsData
 
     [JsonPropertyName("historyEnabled")]
     public bool HistoryEnabled { get; init; } = false;
+
+    [JsonPropertyName("updateLocation")]
+    public string UpdateLocation { get; init; } = "";
 }
 
 static class AppSettings

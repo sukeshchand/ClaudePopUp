@@ -8,8 +8,6 @@ namespace ClaudePopup;
 
 class PopupForm : Form
 {
-    public static readonly string Version = "1.0.3";
-
     private PopupTheme _theme;
 
     private readonly Label _animLabel;
@@ -47,6 +45,9 @@ class PopupForm : Form
 
     private int _historyIndex = -1; // -1 = showing live/current message
     private bool _viewingHistory;
+
+    private readonly Label _updateAvailableLabel;
+    private readonly Label _updateButton;
 
     private const int HeaderHeight = 58;
     private const int InfoBarHeight = 56;
@@ -150,7 +151,7 @@ class PopupForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v{Version}",
+            Text = $"v{AppVersion.Current}",
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(60, 75, 105),
             AutoSize = true,
@@ -247,9 +248,35 @@ class PopupForm : Form
             Location = new Point(20, 60),
         };
 
+        // --- Update notification (bottom-left of footer, hidden by default) ---
+        _updateAvailableLabel = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = theme.SuccessColor,
+            BackColor = Color.Transparent,
+            AutoSize = true,
+            Location = new Point(20, 80),
+            Visible = false,
+        };
+
+        _updateButton = new Label
+        {
+            Text = "Update",
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Underline | FontStyle.Bold),
+            ForeColor = theme.Primary,
+            BackColor = Color.Transparent,
+            AutoSize = true,
+            Cursor = Cursors.Hand,
+            Visible = false,
+        };
+        _updateButton.Click += (_, _) => OnUpdateClick();
+
         _footerPanel.Controls.Add(_separator);
         _footerPanel.Controls.Add(_okButton);
         _footerPanel.Controls.Add(_snoozeCheckBox);
+        _footerPanel.Controls.Add(_updateAvailableLabel);
+        _footerPanel.Controls.Add(_updateButton);
         _footerPanel.Controls.Add(_versionLabel);
 
         // --- WebView (fills remaining space, with padding) ---
@@ -388,6 +415,9 @@ class PopupForm : Form
         _nextButton.ForeColor = theme.TextSecondary;
         _nextButton.FlatAppearance.MouseOverBackColor = theme.Primary;
         _navLabel.ForeColor = theme.TextSecondary;
+
+        _updateAvailableLabel.ForeColor = theme.SuccessColor;
+        _updateButton.ForeColor = theme.Primary;
 
         // Re-apply type-based colors
         ApplyTypeColors(_lastType);
@@ -539,9 +569,12 @@ class PopupForm : Form
         Text = title;
         _titleLabel.Text = title;
 
-        // Build full content with styled user/Claude labels
+        // Render the Claude response markdown to HTML first (before wrapping with raw HTML blocks)
+        string renderedMessage = RenderHtml(message);
+
+        // Build the final HTML by injecting pre-rendered user/Claude blocks into the document body
         string firstName = GetFirstName();
-        string fullContent;
+        string bodyPrefix;
         if (!string.IsNullOrWhiteSpace(question))
         {
             // Truncate long questions to first 3 lines
@@ -550,17 +583,20 @@ class PopupForm : Form
                 ? string.Join("\n", qLines.Take(3)) + "..."
                 : question;
             string escapedQ = System.Net.WebUtility.HtmlEncode(shortQ).Replace("\n", "<br/>");
-            fullContent = $"<div class=\"user-block\"><div class=\"label\">{firstName}:</div><div class=\"text\">{escapedQ}</div></div>\n\n<div class=\"claude-label\">Claude:</div>\n\n{message}";
+            bodyPrefix = $"<div class=\"user-block\"><div class=\"label\">{firstName}:</div><div class=\"text\">{escapedQ}</div></div><div class=\"claude-label\">Claude:</div>";
         }
         else
         {
-            fullContent = $"<div class=\"claude-label\">Claude:</div>\n\n{message}";
+            bodyPrefix = "<div class=\"claude-label\">Claude:</div>";
         }
 
+        // Inject the prefix before the rendered body content inside the <body> tag
+        string htmlContent = renderedMessage.Replace("<body>", $"<body>{bodyPrefix}");
+
         // Estimate a good initial window height based on content, capped at 90% of screen
-        var lineCount = fullContent.Split('\n').Length;
+        var lineCount = message.Split('\n').Length;
         int wrappedLines = lineCount;
-        foreach (var line in fullContent.Split('\n'))
+        foreach (var line in message.Split('\n'))
         {
             if (line.Length > 80)
                 wrappedLines += (line.Length / 80);
@@ -571,8 +607,6 @@ class PopupForm : Form
         ClientSize = new Size(Math.Max(ClientSize.Width, 800), totalHeight);
 
         _snoozeCheckBox.Checked = IsSnoozed;
-
-        string htmlContent = RenderHtml(fullContent);
 
         if (_webViewReady)
             _messageWebView.NavigateToString(htmlContent);
@@ -665,6 +699,41 @@ class PopupForm : Form
             Debug.WriteLine($"WebView2 cleanup failed: {ex.Message}");
         }
         Close();
+    }
+
+    public void ShowUpdateAvailable(UpdateMetadata metadata)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => ShowUpdateAvailable(metadata));
+            return;
+        }
+
+        _updateAvailableLabel.Text = $"v{metadata.Version} available";
+        _updateAvailableLabel.Visible = true;
+        _updateButton.Visible = true;
+        _updateButton.Location = new Point(
+            _updateAvailableLabel.Left + _updateAvailableLabel.PreferredWidth + 8,
+            _updateAvailableLabel.Top);
+    }
+
+    private void OnUpdateClick()
+    {
+        _updateButton.Text = "Updating...";
+        _updateButton.Enabled = false;
+
+        var result = Updater.Apply();
+        if (result.Success)
+        {
+            Application.Exit();
+        }
+        else
+        {
+            MessageBox.Show(this, result.Message, "Update Failed",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _updateButton.Text = "Update";
+            _updateButton.Enabled = true;
+        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

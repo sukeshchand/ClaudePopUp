@@ -31,6 +31,13 @@ class PopupAppContext : ApplicationContext
         _trayIcon.DoubleClick += (_, _) => _popupForm.BringToForeground();
 
         Task.Run(() => PipeServerLoop(_cts.Token));
+
+        // Start update checker
+        UpdateChecker.UpdateAvailable += metadata =>
+        {
+            _popupForm.ShowUpdateAvailable(metadata);
+        };
+        UpdateChecker.Start();
     }
 
     private ContextMenuStrip BuildTrayMenu()
@@ -110,6 +117,7 @@ class PopupAppContext : ApplicationContext
     private void ExitApp()
     {
         _cts.Cancel();
+        UpdateChecker.Stop();
         _settingsForm?.Close();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
