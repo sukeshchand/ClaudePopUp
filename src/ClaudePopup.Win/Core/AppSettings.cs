@@ -7,13 +7,13 @@ namespace ClaudePopup;
 record AppSettingsData
 {
     [JsonPropertyName("theme")]
-    public string Theme { get; init; } = "Ocean Blue";
+    public string Theme { get; init; } = "Amber";
 
     [JsonPropertyName("historyEnabled")]
-    public bool HistoryEnabled { get; init; } = false;
+    public bool HistoryEnabled { get; init; } = true;
 
     [JsonPropertyName("updateLocation")]
-    public string UpdateLocation { get; init; } = "";
+    public string UpdateLocation { get; init; } = @"I:\ClaudePopup";
 }
 
 static class AppSettings

@@ -1,5 +1,5 @@
 ﻿{
-    "releaseNotes":  "Fix nav positioning on first load, only reposition window when offscreen",
-    "publishedAt":  "2026-03-19T12:04:38Z",
-    "version":  "1.0.22"
+    "releaseNotes":  "Default theme changed to Amber",
+    "publishedAt":  "2026-03-19T12:23:07Z",
+    "version":  "1.0.25"
 }

@@ -806,7 +806,17 @@ class PopupForm : Form
             else if (_filterMode == FilterMode.Session)
             {
                 string shortId = _filterValue.Length > 8 ? _filterValue[..8] : _filterValue;
-                filterLabel = $" [{shortId}]";
+                // Find the cwd associated with this session
+                string sessionCwd = "";
+                if (_filteredIndex != null && _filteredIndex.Count > 0)
+                {
+                    var first = _filteredIndex.FirstOrDefault(i => !string.IsNullOrEmpty(i.Cwd));
+                    if (first != null)
+                        sessionCwd = Path.GetFileName(first.Cwd.TrimEnd('/', '\\'));
+                }
+                filterLabel = string.IsNullOrEmpty(sessionCwd)
+                    ? $" [{shortId}]"
+                    : $" [{shortId} - {sessionCwd}]";
             }
 
             if (_viewingHistory)
