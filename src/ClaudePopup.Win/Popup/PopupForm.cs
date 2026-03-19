@@ -33,6 +33,7 @@ class PopupForm : Form
 
     private string _funnyText = "";
     private int _charIndex;
+    private bool _showQuotes = AppSettings.Load().ShowQuotes;
     private Color _accentColor;
     private Color _iconBadgeBg;
     private bool _webViewReady;
@@ -330,6 +331,12 @@ class PopupForm : Form
         Controls.Add(_headerLine);        // Top (below header)
         Controls.Add(_headerPanel);       // Top (first)
 
+        if (!_showQuotes)
+        {
+            _headerPanel.Visible = false;
+            _headerLine.Visible = false;
+        }
+
         _typeTimer = new System.Windows.Forms.Timer { Interval = 60 };
         _typeTimer.Tick += TypeTimer_Tick;
 
@@ -524,6 +531,20 @@ class PopupForm : Form
         SnoozeChanged?.Invoke();
     }
 
+    public void SetShowQuotes(bool show)
+    {
+        _showQuotes = show;
+        _headerPanel.Visible = show;
+        _headerLine.Visible = show;
+        if (!show)
+        {
+            _typeTimer.Stop();
+            _sparkleTimer.Stop();
+            _sparkles.Clear();
+            _animLabel.Text = "";
+        }
+    }
+
     private void OnOkClick()
     {
         if (_snoozeCheckBox.Checked)
@@ -580,11 +601,14 @@ class PopupForm : Form
         DisplayMessage(title, message, type, question, sessionId, cwd);
 
         // New funny quote + restart typewriter
-        _funnyText = FunnyQuotes.Lines[_rng.Next(FunnyQuotes.Lines.Length)];
-        _charIndex = 0;
-        _animLabel.Text = "";
-        _sparkles.Clear();
-        _typeTimer.Start();
+        if (_showQuotes)
+        {
+            _funnyText = FunnyQuotes.Lines[_rng.Next(FunnyQuotes.Lines.Length)];
+            _charIndex = 0;
+            _animLabel.Text = "";
+            _sparkles.Clear();
+            _typeTimer.Start();
+        }
 
         Show();
         WindowState = FormWindowState.Normal;
@@ -676,7 +700,8 @@ class PopupForm : Form
         var workingArea = Screen.FromControl(this).WorkingArea;
         int maxHeight = (int)(workingArea.Height * 0.9);
         int newClientW = Math.Max(ClientSize.Width, 800);
-        int newClientH = Math.Min(maxHeight, HeaderHeight + 2 + InfoBarHeight + estimatedContentHeight + FooterHeight);
+        int headerTotal = _showQuotes ? HeaderHeight + 2 : 0;
+        int newClientH = Math.Min(maxHeight, headerTotal + InfoBarHeight + estimatedContentHeight + FooterHeight);
         ClientSize = new Size(newClientW, newClientH);
 
         // Only reposition if any corner is outside the current screen

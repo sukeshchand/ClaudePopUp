@@ -82,6 +82,11 @@ class PopupAppContext : ApplicationContext
             _popupForm.UpdateHistoryNav();
         };
 
+        _settingsForm.ShowQuotesChanged += show =>
+        {
+            _popupForm.SetShowQuotes(show);
+        };
+
         _settingsForm.SnoozeChanged += snoozed =>
         {
             if (snoozed)
@@ -91,6 +96,8 @@ class PopupAppContext : ApplicationContext
 
             UpdateTrayText();
         };
+
+        _settingsForm.UninstallRequested += () => ExitApp();
 
         _popupForm.SnoozeChanged += UpdateTrayText;
 

@@ -12,6 +12,9 @@ record AppSettingsData
     [JsonPropertyName("historyEnabled")]
     public bool HistoryEnabled { get; init; } = true;
 
+    [JsonPropertyName("showQuotes")]
+    public bool ShowQuotes { get; init; } = true;
+
     [JsonPropertyName("updateLocation")]
     public string UpdateLocation { get; init; } = @"I:\ClaudePopup";
 }

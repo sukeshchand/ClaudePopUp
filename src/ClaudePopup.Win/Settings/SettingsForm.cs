@@ -8,10 +8,14 @@ class SettingsForm : Form
     private PopupTheme _currentTheme;
     private readonly Panel _themePreview;
     private readonly Label _themeNameLabel;
+    private readonly List<RoundedButton> _tabButtons = new();
+    private readonly List<Panel> _tabPanels = new();
 
     public event Action<PopupTheme>? ThemeChanged;
     public event Action<bool>? HistoryEnabledChanged;
     public event Action<bool>? SnoozeChanged;
+    public event Action<bool>? ShowQuotesChanged;
+    public event Action? UninstallRequested;
 
     public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
     {
@@ -30,11 +34,11 @@ class SettingsForm : Form
         Font = new Font("Segoe UI", 10f);
         Icon = Themes.CreateAppIcon(currentTheme.Primary);
 
-        int y = 20;
         int leftMargin = 28;
         int contentWidth = ClientSize.Width - leftMargin * 2;
 
         // --- Title ---
+        int y = 16;
         var titleLabel = new Label
         {
             Text = "Settings",
@@ -45,9 +49,43 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
         };
         Controls.Add(titleLabel);
-        y += 44;
+        y += 40;
 
-        // --- Accent line ---
+        // --- Tab bar ---
+        var tabBar = new Panel
+        {
+            Location = new Point(leftMargin, y),
+            Size = new Size(contentWidth, 34),
+            BackColor = Color.Transparent,
+        };
+        Controls.Add(tabBar);
+
+        string[] tabNames = ["Appearance", "General", "Advanced"];
+        int tabWidth = 130;
+        int tabSpacing = 6;
+        for (int i = 0; i < tabNames.Length; i++)
+        {
+            var tabBtn = new RoundedButton
+            {
+                Text = tabNames[i],
+                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+                Size = new Size(tabWidth, 30),
+                Location = new Point(i * (tabWidth + tabSpacing), 2),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = i == 0 ? currentTheme.Primary : currentTheme.BgHeader,
+                ForeColor = i == 0 ? Color.White : currentTheme.TextSecondary,
+                Cursor = Cursors.Hand,
+                Tag = i,
+            };
+            tabBtn.FlatAppearance.BorderSize = 0;
+            tabBtn.FlatAppearance.MouseOverBackColor = i == 0 ? currentTheme.PrimaryLight : currentTheme.Border;
+            tabBtn.Click += OnTabClick;
+            tabBar.Controls.Add(tabBtn);
+            _tabButtons.Add(tabBtn);
+        }
+        y += 42;
+
+        // --- Accent line under tabs ---
         var accentLine = new Panel
         {
             BackColor = currentTheme.Primary,
@@ -55,26 +93,25 @@ class SettingsForm : Form
             Size = new Size(contentWidth, 2),
         };
         Controls.Add(accentLine);
-        y += 18;
+        y += 10;
 
-        // === Theme Section ===
-        var themeSectionLabel = new Label
-        {
-            Text = "THEME",
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-            ForeColor = currentTheme.TextSecondary,
-            AutoSize = true,
-            Location = new Point(leftMargin, y),
-            BackColor = Color.Transparent,
-        };
-        Controls.Add(themeSectionLabel);
-        y += 24;
+        int tabTop = y;
+        int tabContentHeight = 340;
 
-        // Theme grid — colored circles for each theme (all in one row)
+        // =============================================
+        // TAB 0: Appearance
+        // =============================================
+        var appearancePanel = CreateTabPanel(tabTop, tabContentHeight, contentWidth, leftMargin);
+        int ay = 14;
+
+        // --- Theme Section ---
+        var themeSectionLabel = CreateSectionLabel("THEME", leftMargin, ay);
+        appearancePanel.Controls.Add(themeSectionLabel);
+        ay += 24;
+
         int circleSize = 36;
         int circleSpacing = 8;
         int circlesPerRow = Themes.All.Length;
-        int gridX = leftMargin;
 
         for (int i = 0; i < Themes.All.Length; i++)
         {
@@ -87,59 +124,85 @@ class SettingsForm : Form
                 Theme = theme,
                 IsSelected = theme.Name == currentTheme.Name,
                 Size = new Size(circleSize, circleSize),
-                Location = new Point(gridX + col * (circleSize + circleSpacing), y + row * (circleSize + circleSpacing)),
+                Location = new Point(leftMargin + col * (circleSize + circleSpacing), ay + row * (circleSize + circleSpacing)),
                 Cursor = Cursors.Hand,
             };
             btn.Click += OnThemeCircleClick;
-            Controls.Add(btn);
+            appearancePanel.Controls.Add(btn);
         }
 
         int themeRows = (Themes.All.Length + circlesPerRow - 1) / circlesPerRow;
-        y += themeRows * (circleSize + circleSpacing) + 4;
+        ay += themeRows * (circleSize + circleSpacing) + 4;
 
-        // Selected theme name + preview bar
         _themeNameLabel = new Label
         {
             Text = currentTheme.Name,
             Font = new Font("Segoe UI", 10f),
             ForeColor = currentTheme.Primary,
             AutoSize = true,
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, ay),
             BackColor = Color.Transparent,
         };
-        Controls.Add(_themeNameLabel);
+        appearancePanel.Controls.Add(_themeNameLabel);
 
         _themePreview = new Panel
         {
             BackColor = currentTheme.Primary,
-            Location = new Point(leftMargin, y + 24),
+            Location = new Point(leftMargin, ay + 24),
             Size = new Size(contentWidth, 4),
         };
-        Controls.Add(_themePreview);
-        y += 48;
+        appearancePanel.Controls.Add(_themePreview);
+        ay += 48;
 
         // --- Separator ---
-        var sep1 = new Panel
-        {
-            BackColor = currentTheme.Border,
-            Location = new Point(leftMargin, y),
-            Size = new Size(contentWidth, 1),
-        };
-        Controls.Add(sep1);
-        y += 18;
+        appearancePanel.Controls.Add(CreateSeparator(leftMargin, ay, contentWidth));
+        ay += 18;
 
-        // === Options Section ===
-        var optionsSectionLabel = new Label
+        // --- Show quotes toggle ---
+        var quotesCheck = new CheckBox
         {
-            Text = "OPTIONS",
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Text = "Show quotes in header",
+            Font = new Font("Segoe UI", 10f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = AppSettings.Load().ShowQuotes,
+            AutoSize = true,
+            Location = new Point(leftMargin, ay),
+            Cursor = Cursors.Hand,
+        };
+        quotesCheck.CheckedChanged += (_, _) =>
+        {
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { ShowQuotes = quotesCheck.Checked });
+            ShowQuotesChanged?.Invoke(quotesCheck.Checked);
+        };
+        appearancePanel.Controls.Add(quotesCheck);
+
+        var quotesDesc = new Label
+        {
+            Text = "Displays a random programmer quote with typewriter animation",
+            Font = new Font("Segoe UI", 8.5f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin + 20, ay + 24),
             BackColor = Color.Transparent,
         };
-        Controls.Add(optionsSectionLabel);
-        y += 28;
+        appearancePanel.Controls.Add(quotesDesc);
+
+        Controls.Add(appearancePanel);
+        _tabPanels.Add(appearancePanel);
+
+        // =============================================
+        // TAB 1: General
+        // =============================================
+        var generalPanel = CreateTabPanel(tabTop, tabContentHeight, contentWidth, leftMargin);
+        generalPanel.Visible = false;
+        int gy = 14;
+
+        // --- Notifications Section ---
+        var notifSectionLabel = CreateSectionLabel("NOTIFICATIONS", leftMargin, gy);
+        generalPanel.Controls.Add(notifSectionLabel);
+        gy += 28;
 
         // History toggle
         var historyCheck = new CheckBox
@@ -150,7 +213,7 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
             Checked = ResponseHistory.IsEnabled,
             AutoSize = true,
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, gy),
             Cursor = Cursors.Hand,
         };
         historyCheck.CheckedChanged += (_, _) =>
@@ -158,7 +221,7 @@ class SettingsForm : Form
             ResponseHistory.IsEnabled = historyCheck.Checked;
             HistoryEnabledChanged?.Invoke(historyCheck.Checked);
         };
-        Controls.Add(historyCheck);
+        generalPanel.Controls.Add(historyCheck);
 
         var historyDesc = new Label
         {
@@ -166,11 +229,11 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 8.5f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
-            Location = new Point(leftMargin + 20, y + 24),
+            Location = new Point(leftMargin + 20, gy + 24),
             BackColor = Color.Transparent,
         };
-        Controls.Add(historyDesc);
-        y += 56;
+        generalPanel.Controls.Add(historyDesc);
+        gy += 56;
 
         // Snooze toggle
         bool isSnoozed = DateTime.Now < snoozeUntil;
@@ -184,7 +247,7 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
             Checked = isSnoozed,
             AutoSize = true,
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, gy),
             Cursor = Cursors.Hand,
         };
 
@@ -194,13 +257,12 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 8.5f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
-            Location = new Point(leftMargin + 20, y + 24),
+            Location = new Point(leftMargin + 20, gy + 24),
             BackColor = Color.Transparent,
         };
 
-        // Timer to update remaining time and auto-uncheck when expired
         var _snoozeUntil = snoozeUntil;
-        var snoozeTimer = new System.Windows.Forms.Timer { Interval = 15000 }; // every 15 seconds
+        var snoozeTimer = new System.Windows.Forms.Timer { Interval = 15000 };
         snoozeTimer.Tick += (_, _) =>
         {
             if (DateTime.Now >= _snoozeUntil && snoozeCheck.Checked)
@@ -238,32 +300,18 @@ class SettingsForm : Form
 
         FormClosed += (_, _) => { snoozeTimer.Stop(); snoozeTimer.Dispose(); };
 
-        Controls.Add(snoozeCheck);
-        Controls.Add(snoozeDesc);
-        y += 56;
+        generalPanel.Controls.Add(snoozeCheck);
+        generalPanel.Controls.Add(snoozeDesc);
+        gy += 56;
 
         // --- Separator ---
-        var sep2 = new Panel
-        {
-            BackColor = currentTheme.Border,
-            Location = new Point(leftMargin, y),
-            Size = new Size(contentWidth, 1),
-        };
-        Controls.Add(sep2);
-        y += 18;
+        generalPanel.Controls.Add(CreateSeparator(leftMargin, gy, contentWidth));
+        gy += 18;
 
-        // === Update Section ===
-        var updateSectionLabel = new Label
-        {
-            Text = "UPDATES",
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-            ForeColor = currentTheme.TextSecondary,
-            AutoSize = true,
-            Location = new Point(leftMargin, y),
-            BackColor = Color.Transparent,
-        };
-        Controls.Add(updateSectionLabel);
-        y += 24;
+        // --- Updates Section ---
+        var updateSectionLabel = CreateSectionLabel("UPDATES", leftMargin, gy);
+        generalPanel.Controls.Add(updateSectionLabel);
+        gy += 24;
 
         var updatePathLabel = new Label
         {
@@ -271,11 +319,11 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 9f),
             ForeColor = currentTheme.TextPrimary,
             AutoSize = true,
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, gy),
             BackColor = Color.Transparent,
         };
-        Controls.Add(updatePathLabel);
-        y += 22;
+        generalPanel.Controls.Add(updatePathLabel);
+        gy += 22;
 
         var updatePathBox = new TextBox
         {
@@ -285,21 +333,21 @@ class SettingsForm : Form
             BackColor = currentTheme.BgHeader,
             BorderStyle = BorderStyle.FixedSingle,
             Size = new Size(contentWidth - 40, 26),
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, gy),
         };
         updatePathBox.LostFocus += (_, _) =>
         {
             var settings = AppSettings.Load();
             AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
         };
-        Controls.Add(updatePathBox);
+        generalPanel.Controls.Add(updatePathBox);
 
         var savePathButton = new RoundedButton
         {
             Text = "Save",
             Font = new Font("Segoe UI", 8.5f),
             Size = new Size(34, 26),
-            Location = new Point(leftMargin + contentWidth - 34, y),
+            Location = new Point(leftMargin + contentWidth - 34, gy),
             FlatStyle = FlatStyle.Flat,
             BackColor = currentTheme.PrimaryDim,
             ForeColor = currentTheme.TextSecondary,
@@ -316,15 +364,15 @@ class SettingsForm : Form
             resetTimer.Tick += (_, _) => { savePathButton.Text = "Save"; resetTimer.Stop(); resetTimer.Dispose(); };
             resetTimer.Start();
         };
-        Controls.Add(savePathButton);
-        y += 34;
+        generalPanel.Controls.Add(savePathButton);
+        gy += 34;
 
         var checkNowButton = new RoundedButton
         {
             Text = "Check for Updates",
             Font = new Font("Segoe UI", 8.5f),
             Size = new Size(140, 28),
-            Location = new Point(leftMargin, y),
+            Location = new Point(leftMargin, gy),
             FlatStyle = FlatStyle.Flat,
             BackColor = currentTheme.PrimaryDim,
             ForeColor = currentTheme.TextSecondary,
@@ -339,7 +387,7 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 8.5f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
-            Location = new Point(leftMargin + 150, y + 5),
+            Location = new Point(leftMargin + 150, gy + 5),
             BackColor = Color.Transparent,
         };
 
@@ -373,7 +421,6 @@ class SettingsForm : Form
 
         checkNowButton.Click += (_, _) =>
         {
-            // Save the path first
             var settings = AppSettings.Load();
             AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
 
@@ -402,54 +449,158 @@ class SettingsForm : Form
             checkNowButton.Enabled = true;
             checkNowButton.Text = "Check for Updates";
         };
-        Controls.Add(checkNowButton);
-        Controls.Add(checkResultLabel);
-        Controls.Add(updateLinkLabel);
-        y += 40;
+        generalPanel.Controls.Add(checkNowButton);
+        generalPanel.Controls.Add(checkResultLabel);
+        generalPanel.Controls.Add(updateLinkLabel);
 
-        // --- Separator ---
-        var sep3 = new Panel
+        Controls.Add(generalPanel);
+        _tabPanels.Add(generalPanel);
+
+        // =============================================
+        // TAB 2: Advanced
+        // =============================================
+        var advancedPanel = CreateTabPanel(tabTop, tabContentHeight, contentWidth, leftMargin);
+        advancedPanel.Visible = false;
+        int uy = 14;
+
+        // --- Uninstall Section ---
+        var uninstallSectionLabel = CreateSectionLabel("UNINSTALL", leftMargin, uy);
+        advancedPanel.Controls.Add(uninstallSectionLabel);
+        uy += 28;
+
+        var uninstallDesc = new Label
         {
-            BackColor = currentTheme.Border,
-            Location = new Point(leftMargin, y),
-            Size = new Size(contentWidth, 1),
+            Text = "Remove ClaudePopup from the Claude tools folder and clean up hook\nentries from Claude Code settings. Your response history and app\nsettings will be preserved.",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(leftMargin, uy),
+            BackColor = Color.Transparent,
         };
-        Controls.Add(sep3);
-        y += 18;
+        advancedPanel.Controls.Add(uninstallDesc);
+        uy += 60;
 
-        // --- Close button ---
-        var closeButton = new RoundedButton
+        var uninstallButton = new RoundedButton
         {
-            Text = "Close",
-            Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-            Size = new Size(120, 38),
-            Location = new Point((ClientSize.Width - 120) / 2, y),
+            Text = "Uninstall ClaudePopup",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Size = new Size(200, 34),
+            Location = new Point(leftMargin, uy),
             FlatStyle = FlatStyle.Flat,
-            BackColor = currentTheme.Primary,
+            BackColor = currentTheme.ErrorColor,
             ForeColor = Color.White,
             Cursor = Cursors.Hand,
         };
-        closeButton.FlatAppearance.BorderSize = 0;
-        closeButton.FlatAppearance.MouseOverBackColor = currentTheme.PrimaryLight;
-        closeButton.FlatAppearance.MouseDownBackColor = currentTheme.PrimaryDim;
-        closeButton.Click += (_, _) => Close();
-        Controls.Add(closeButton);
+        uninstallButton.FlatAppearance.BorderSize = 0;
+        uninstallButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(
+            Math.Min(255, currentTheme.ErrorColor.R + 30),
+            Math.Min(255, currentTheme.ErrorColor.G + 10),
+            Math.Min(255, currentTheme.ErrorColor.B + 10));
+        uninstallButton.Click += (_, _) =>
+        {
+            var confirm = MessageBox.Show(this,
+                "This will remove ClaudePopup from the Claude tools folder and remove the hook entries from Claude Code settings.\n\n" +
+                "Your response history and app settings will be kept.\n\n" +
+                "Are you sure you want to uninstall?",
+                "Confirm Uninstall",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
 
-        // --- Version label ---
+            if (confirm != DialogResult.Yes) return;
+
+            var result = Uninstaller.Run(out string? cleanupBatPath);
+            if (result.Success)
+            {
+                MessageBox.Show(this,
+                    result.Message + "\n\nThe application will now close.",
+                    "Uninstall Complete",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                // Launch the cleanup script before exiting — it waits for
+                // this process to die, then deletes the exe files.
+                if (cleanupBatPath != null)
+                    Uninstaller.LaunchCleanupScript(cleanupBatPath);
+
+                UninstallRequested?.Invoke();
+            }
+            else
+            {
+                MessageBox.Show(this,
+                    result.Message,
+                    "Uninstall Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        };
+        advancedPanel.Controls.Add(uninstallButton);
+
+        Controls.Add(advancedPanel);
+        _tabPanels.Add(advancedPanel);
+
+        // --- Version label (on main form, below tabs) ---
         var versionLabel = new Label
         {
             Text = $"ClaudePopup v{AppVersion.Current}",
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(60, 75, 105),
             AutoSize = true,
-            Location = new Point(leftMargin, ClientSize.Height - 26),
+            Location = new Point(leftMargin, tabTop + tabContentHeight + 6),
             BackColor = Color.Transparent,
         };
         Controls.Add(versionLabel);
 
-        // Adjust form height to fit content
-        ClientSize = new Size(ClientSize.Width, y + 38 + 40);
-        versionLabel.Location = new Point(leftMargin, ClientSize.Height - 26);
+        // Final form height
+        ClientSize = new Size(ClientSize.Width, tabTop + tabContentHeight + 30);
+    }
+
+    private Panel CreateTabPanel(int top, int height, int contentWidth, int leftMargin)
+    {
+        return new Panel
+        {
+            Location = new Point(0, top),
+            Size = new Size(ClientSize.Width, height),
+            BackColor = BackColor,
+            AutoScroll = false,
+        };
+    }
+
+    private Label CreateSectionLabel(string text, int x, int y)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = _currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(x, y),
+            BackColor = Color.Transparent,
+        };
+    }
+
+    private Panel CreateSeparator(int x, int y, int width)
+    {
+        return new Panel
+        {
+            BackColor = _currentTheme.Border,
+            Location = new Point(x, y),
+            Size = new Size(width, 1),
+        };
+    }
+
+    private void OnTabClick(object? sender, EventArgs e)
+    {
+        if (sender is not RoundedButton clicked || clicked.Tag is not int index) return;
+
+        for (int i = 0; i < _tabButtons.Count; i++)
+        {
+            bool active = i == index;
+            _tabButtons[i].BackColor = active ? _currentTheme.Primary : _currentTheme.BgHeader;
+            _tabButtons[i].ForeColor = active ? Color.White : _currentTheme.TextSecondary;
+            _tabButtons[i].FlatAppearance.MouseOverBackColor = active ? _currentTheme.PrimaryLight : _currentTheme.Border;
+            _tabPanels[i].Visible = active;
+        }
     }
 
     private void OnThemeCircleClick(object? sender, EventArgs e)
@@ -458,13 +609,16 @@ class SettingsForm : Form
 
         _currentTheme = btn.Theme;
 
-        // Update all circle selections
-        foreach (Control c in Controls)
+        // Update all circle selections (circles are inside the appearance tab panel)
+        foreach (var panel in _tabPanels)
         {
-            if (c is ThemeCircleButton circle)
+            foreach (Control c in panel.Controls)
             {
-                circle.IsSelected = circle.Theme.Name == _currentTheme.Name;
-                circle.Invalidate();
+                if (c is ThemeCircleButton circle)
+                {
+                    circle.IsSelected = circle.Theme.Name == _currentTheme.Name;
+                    circle.Invalidate();
+                }
             }
         }
 
