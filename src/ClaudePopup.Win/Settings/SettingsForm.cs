@@ -13,7 +13,7 @@ class SettingsForm : Form
     public event Action<bool>? HistoryEnabledChanged;
     public event Action<bool>? SnoozeChanged;
 
-    public SettingsForm(PopupTheme currentTheme, bool isSnoozed)
+    public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
     {
         _currentTheme = currentTheme;
 
@@ -70,10 +70,10 @@ class SettingsForm : Form
         Controls.Add(themeSectionLabel);
         y += 24;
 
-        // Theme grid — colored circles for each theme
-        int circleSize = 40;
-        int circleSpacing = 12;
-        int circlesPerRow = 7;
+        // Theme grid — colored circles for each theme (all in one row)
+        int circleSize = 36;
+        int circleSpacing = 8;
+        int circlesPerRow = Themes.All.Length;
         int gridX = leftMargin;
 
         for (int i = 0; i < Themes.All.Length; i++)
@@ -173,9 +173,12 @@ class SettingsForm : Form
         y += 56;
 
         // Snooze toggle
+        bool isSnoozed = DateTime.Now < snoozeUntil;
         var snoozeCheck = new CheckBox
         {
-            Text = "Snooze notifications (30 minutes)",
+            Text = isSnoozed
+                ? $"Snoozed ({Math.Max(1, (int)(snoozeUntil - DateTime.Now).TotalMinutes)} min left)"
+                : "Snooze notifications (30 minutes)",
             Font = new Font("Segoe UI", 10f),
             ForeColor = currentTheme.TextPrimary,
             BackColor = Color.Transparent,
@@ -184,11 +187,6 @@ class SettingsForm : Form
             Location = new Point(leftMargin, y),
             Cursor = Cursors.Hand,
         };
-        snoozeCheck.CheckedChanged += (_, _) =>
-        {
-            SnoozeChanged?.Invoke(snoozeCheck.Checked);
-        };
-        Controls.Add(snoozeCheck);
 
         var snoozeDesc = new Label
         {
@@ -199,6 +197,48 @@ class SettingsForm : Form
             Location = new Point(leftMargin + 20, y + 24),
             BackColor = Color.Transparent,
         };
+
+        // Timer to update remaining time and auto-uncheck when expired
+        var _snoozeUntil = snoozeUntil;
+        var snoozeTimer = new System.Windows.Forms.Timer { Interval = 15000 }; // every 15 seconds
+        snoozeTimer.Tick += (_, _) =>
+        {
+            if (DateTime.Now >= _snoozeUntil && snoozeCheck.Checked)
+            {
+                snoozeCheck.Checked = false;
+                snoozeCheck.Text = "Snooze notifications (30 minutes)";
+                SnoozeChanged?.Invoke(false);
+                snoozeTimer.Stop();
+            }
+            else if (snoozeCheck.Checked && DateTime.Now < _snoozeUntil)
+            {
+                int mins = Math.Max(1, (int)(_snoozeUntil - DateTime.Now).TotalMinutes);
+                snoozeCheck.Text = $"Snoozed ({mins} min left)";
+            }
+        };
+        if (isSnoozed) snoozeTimer.Start();
+
+        snoozeCheck.CheckedChanged += (_, _) =>
+        {
+            if (snoozeCheck.Checked)
+            {
+                _snoozeUntil = DateTime.Now.AddMinutes(30);
+                int mins = 30;
+                snoozeCheck.Text = $"Snoozed ({mins} min left)";
+                snoozeTimer.Start();
+            }
+            else
+            {
+                _snoozeUntil = DateTime.MinValue;
+                snoozeCheck.Text = "Snooze notifications (30 minutes)";
+                snoozeTimer.Stop();
+            }
+            SnoozeChanged?.Invoke(snoozeCheck.Checked);
+        };
+
+        FormClosed += (_, _) => { snoozeTimer.Stop(); snoozeTimer.Dispose(); };
+
+        Controls.Add(snoozeCheck);
         Controls.Add(snoozeDesc);
         y += 56;
 
@@ -458,14 +498,25 @@ class ThemeCircleButton : Control
         int pad = IsSelected ? 3 : 6;
         var circleRect = new Rectangle(pad, pad, Width - pad * 2, Height - pad * 2);
 
-        // Fill circle with theme primary color
-        using var brush = new SolidBrush(Theme.Primary);
+        // Use BgDark as the circle fill for light/mono themes, Primary for dark themes
+        bool isLightTheme = Theme.BgDark.GetBrightness() > 0.5f;
+        var fillColor = isLightTheme ? Theme.BgDark : Theme.Primary;
+
+        using var brush = new SolidBrush(fillColor);
         g.FillEllipse(brush, circleRect);
+
+        // Light themes need a visible border since the fill is white/light
+        if (isLightTheme)
+        {
+            using var borderPen = new Pen(Theme.Border, 1.5f);
+            g.DrawEllipse(borderPen, circleRect);
+        }
 
         // Selection ring
         if (IsSelected)
         {
-            using var pen = new Pen(Theme.Primary, 2.5f);
+            var ringColor = isLightTheme ? Theme.TextSecondary : Theme.Primary;
+            using var pen = new Pen(ringColor, 2.5f);
             g.DrawEllipse(pen, 1, 1, Width - 3, Height - 3);
         }
     }

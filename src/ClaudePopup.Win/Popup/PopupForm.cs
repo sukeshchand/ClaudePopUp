@@ -12,6 +12,7 @@ class PopupForm : Form
 
     private readonly Label _animLabel;
     private readonly Panel _headerPanel;
+    private readonly Panel _infoPanel;
     private readonly Label _iconLabel;
     private readonly Label _titleLabel;
     private readonly Label _subtitleLabel;
@@ -111,7 +112,7 @@ class PopupForm : Form
         };
 
         // --- Info bar (icon + title + subtitle + version) - fixed height below header ---
-        var infoPanel = new Panel
+        _infoPanel = new Panel
         {
             Dock = DockStyle.Top,
             Height = InfoBarHeight,
@@ -200,7 +201,7 @@ class PopupForm : Form
             Visible = false,
         };
 
-        infoPanel.Controls.AddRange(new Control[]
+        _infoPanel.Controls.AddRange(new Control[]
         {
             _iconLabel, _titleLabel, _subtitleLabel,
             _prevButton, _navLabel, _nextButton
@@ -289,7 +290,7 @@ class PopupForm : Form
         _webViewContainer = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(16, 8, 16, 8),
+            Padding = new Padding(16, 8, 16, 24),
             BackColor = theme.BgDark,
         };
         _webViewContainer.Controls.Add(_messageWebView);
@@ -304,7 +305,7 @@ class PopupForm : Form
         // So add Fill first, then the docked panels in reverse visual order.
         Controls.Add(_webViewContainer);   // Fill - added first, docked last
         Controls.Add(_footerPanel);       // Bottom
-        Controls.Add(infoPanel);          // Top (below header line)
+        Controls.Add(_infoPanel);          // Top (below header line)
         Controls.Add(_headerLine);        // Top (below header)
         Controls.Add(_headerPanel);       // Top (first)
 
@@ -395,6 +396,7 @@ class PopupForm : Form
         _headerPanel.BackColor = theme.BgHeader;
         _animLabel.ForeColor = theme.PrimaryLight;
         _headerLine.BackColor = theme.Primary;
+        _infoPanel.BackColor = theme.BgDark;
         _titleLabel.ForeColor = theme.TextPrimary;
         _subtitleLabel.ForeColor = theme.TextSecondary;
         _separator.BackColor = theme.Border;
@@ -442,7 +444,8 @@ class PopupForm : Form
             textColorHex: ToHex(isLight ? _theme.TextPrimary : _theme.TextSecondary),
             headingColorHex: ToHex(_theme.TextPrimary),
             bgColorHex: ToHex(_theme.BgDark),
-            codeBgHex: isLight ? "rgba(0,0,0,0.06)" : "rgba(12, 16, 26, 0.8)");
+            codeBgHex: isLight ? "rgba(0,0,0,0.06)" : "rgba(12, 16, 26, 0.8)",
+            themePrimaryHex: ToHex(_theme.Primary));
     }
 
     private void ApplyTypeColors(string type)
@@ -583,15 +586,18 @@ class PopupForm : Form
                 ? string.Join("\n", qLines.Take(3)) + "..."
                 : question;
             string escapedQ = System.Net.WebUtility.HtmlEncode(shortQ).Replace("\n", "<br/>");
-            bodyPrefix = $"<div class=\"user-block\"><div class=\"label\">{firstName}:</div><div class=\"text\">{escapedQ}</div></div><div class=\"claude-label\">Claude:</div>";
+            bodyPrefix = $"<div class=\"user-block\"><div class=\"label\">{firstName}:</div><div class=\"text\">{escapedQ}</div></div><div class=\"claude-block\"><div class=\"claude-label\">Claude:</div><div class=\"claude-content\">";
         }
         else
         {
-            bodyPrefix = "<div class=\"claude-label\">Claude:</div>";
+            bodyPrefix = "<div class=\"claude-block\"><div class=\"claude-label\">Claude:</div><div class=\"claude-content\">";
         }
 
-        // Inject the prefix before the rendered body content inside the <body> tag
-        string htmlContent = renderedMessage.Replace("<body>", $"<body>{bodyPrefix}");
+        // Inject the prefix before the rendered body content inside the <body> tag,
+        // and close the claude-content + claude-block divs at the end
+        string htmlContent = renderedMessage
+            .Replace("<body>", $"<body>{bodyPrefix}")
+            .Replace("</body>", "</div></div></body>");
 
         // Estimate a good initial window height based on content, capped at 90% of screen
         var lineCount = message.Split('\n').Length;
@@ -601,7 +607,8 @@ class PopupForm : Form
             if (line.Length > 80)
                 wrappedLines += (line.Length / 80);
         }
-        int estimatedContentHeight = Math.Max(120, wrappedLines * 28 + 40);
+        int prefixHeight = string.IsNullOrWhiteSpace(question) ? 40 : 100; // user-block + claude-label
+        int estimatedContentHeight = Math.Max(180, wrappedLines * 28 + prefixHeight + 60);
         int maxHeight = (int)(Screen.FromControl(this).WorkingArea.Height * 0.9);
         int totalHeight = Math.Min(maxHeight, HeaderHeight + 2 + InfoBarHeight + estimatedContentHeight + FooterHeight);
         ClientSize = new Size(Math.Max(ClientSize.Width, 800), totalHeight);

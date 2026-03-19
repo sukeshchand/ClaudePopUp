@@ -141,14 +141,33 @@ static class Themes
             Sparkle4: Color.FromArgb(255, 255, 255)
         ),
 
+        new("Mono",
+            BgDark: Color.FromArgb(0, 0, 0),
+            BgHeader: Color.FromArgb(10, 10, 10),
+            Primary: Color.FromArgb(200, 200, 200),
+            PrimaryLight: Color.FromArgb(240, 240, 240),
+            PrimaryDim: Color.FromArgb(40, 40, 40),
+            TextPrimary: Color.FromArgb(245, 245, 245),
+            TextSecondary: Color.FromArgb(160, 160, 160),
+            Border: Color.FromArgb(50, 50, 50),
+            SuccessColor: Color.FromArgb(200, 200, 200),
+            SuccessBg: Color.FromArgb(25, 25, 25),
+            ErrorColor: Color.FromArgb(255, 100, 100),
+            ErrorBg: Color.FromArgb(40, 10, 10),
+            Sparkle1: Color.FromArgb(255, 255, 255),
+            Sparkle2: Color.FromArgb(200, 200, 200),
+            Sparkle3: Color.FromArgb(150, 150, 150),
+            Sparkle4: Color.FromArgb(100, 100, 100)
+        ),
+
         new("Lite",
             BgDark: Color.FromArgb(245, 245, 248),
-            BgHeader: Color.FromArgb(235, 235, 240),
+            BgHeader: Color.FromArgb(250, 251, 254),
             Primary: Color.FromArgb(56, 132, 244),
             PrimaryLight: Color.FromArgb(96, 165, 250),
             PrimaryDim: Color.FromArgb(210, 225, 245),
-            TextPrimary: Color.FromArgb(30, 30, 40),
-            TextSecondary: Color.FromArgb(100, 105, 120),
+            TextPrimary: Color.FromArgb(50, 60, 80),
+            TextSecondary: Color.FromArgb(110, 120, 140),
             Border: Color.FromArgb(210, 215, 225),
             SuccessColor: Color.FromArgb(22, 163, 74),
             SuccessBg: Color.FromArgb(220, 252, 231),
@@ -157,7 +176,7 @@ static class Themes
             Sparkle1: Color.FromArgb(56, 132, 244),
             Sparkle2: Color.FromArgb(96, 165, 250),
             Sparkle3: Color.FromArgb(190, 210, 255),
-            Sparkle4: Color.FromArgb(30, 30, 40)
+            Sparkle4: Color.FromArgb(140, 170, 220)
         ),
     ];
 

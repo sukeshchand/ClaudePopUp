@@ -61,7 +61,7 @@ class PopupAppContext : ApplicationContext
             return;
         }
 
-        _settingsForm = new SettingsForm(_popupForm.CurrentTheme, _popupForm.IsSnoozed);
+        _settingsForm = new SettingsForm(_popupForm.CurrentTheme, _popupForm.SnoozeUntil);
 
         _settingsForm.ThemeChanged += theme =>
         {

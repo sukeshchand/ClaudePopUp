@@ -6,7 +6,7 @@ namespace ClaudePopup;
 
 static class MarkdownRenderer
 {
-    public static string ToHtml(string markdown, string accentColorHex, string textColorHex = "#a0afd2", string headingColorHex = "#ebf0ff", string bgColorHex = "transparent", string codeBgHex = "rgba(12, 16, 26, 0.8)")
+    public static string ToHtml(string markdown, string accentColorHex, string textColorHex = "#a0afd2", string headingColorHex = "#ebf0ff", string bgColorHex = "transparent", string codeBgHex = "rgba(12, 16, 26, 0.8)", string? themePrimaryHex = null)
     {
         var lines = markdown.Replace("\r\n", "\n").Split('\n');
         var sb = new StringBuilder();
@@ -153,7 +153,7 @@ static class MarkdownRenderer
         if (inTable) sb.AppendLine("</tbody></table>");
         if (inCodeBlock) sb.AppendLine("</code></pre>");
 
-        return WrapInHtmlDocument(sb.ToString(), accentColorHex, textColorHex, headingColorHex, bgColorHex, codeBgHex);
+        return WrapInHtmlDocument(sb.ToString(), accentColorHex, textColorHex, headingColorHex, bgColorHex, codeBgHex, themePrimaryHex ?? accentColorHex);
     }
 
     private static string InlineMarkdown(string text)
@@ -183,7 +183,7 @@ static class MarkdownRenderer
         return trimmed.Split('|').Select(c => c.Trim()).ToArray();
     }
 
-    private static string WrapInHtmlDocument(string body, string accentColorHex, string textColorHex, string headingColorHex, string bgColorHex, string codeBgHex)
+    private static string WrapInHtmlDocument(string body, string accentColorHex, string textColorHex, string headingColorHex, string bgColorHex, string codeBgHex, string themePrimaryHex)
     {
         return $@"<!DOCTYPE html>
 <html>
@@ -196,7 +196,7 @@ static class MarkdownRenderer
         font-size: 15px;
         color: {textColorHex};
         background: {bgColorHex};
-        padding: 4px 14px 4px 4px;
+        padding: 4px 14px 20px 4px;
         line-height: 1.6;
         overflow-x: hidden;
         overflow-y: auto;
@@ -275,28 +275,52 @@ static class MarkdownRenderer
         margin: 10px 0;
     }}
     .user-block {{
-        background: {accentColorHex}12;
-        border-left: 3px solid {accentColorHex}66;
-        padding: 8px 12px;
-        margin: 0 0 6px 0;
-        border-radius: 0 6px 6px 0;
+        background: {themePrimaryHex}10;
+        border: 1px solid {themePrimaryHex}25;
+        border-left: 4px solid {themePrimaryHex}77;
+        padding: 12px 16px;
+        margin: 0 0 10px 0;
+        border-radius: 0 8px 8px 0;
     }}
     .user-block .label {{
-        color: {accentColorHex};
-        font-weight: 600;
-        font-size: 13px;
-        margin-bottom: 2px;
+        color: {themePrimaryHex};
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+        opacity: 0.85;
+    }}
+    .user-block .label::before {{
+        content: '\25B8 ';
     }}
     .user-block .text {{
-        color: {textColorHex};
-        opacity: 0.85;
-        font-size: 13px;
+        color: {headingColorHex};
+        font-family: 'Cascadia Code', 'Consolas', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }}
+    .claude-block {{
+        background: transparent;
+        border-left: 3px solid {themePrimaryHex}33;
+        border-radius: 0;
+        padding: 8px 14px 8px 14px;
+        margin: 4px 0 0 0;
     }}
     .claude-label {{
-        color: {headingColorHex};
-        font-weight: 600;
-        font-size: 13px;
-        margin: 8px 0 4px 0;
+        color: {themePrimaryHex};
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+    }}
+    .claude-label::before {{
+        content: '\2726 ';
+    }}
+    .claude-content {{
     }}
     br {{ display: block; content: ''; margin: 4px 0; }}
     ::-webkit-scrollbar {{ width: 6px; }}
