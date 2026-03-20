@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace ClaudePopup;
@@ -43,7 +44,12 @@ static class UpdateChecker
             if (metadata == null || string.IsNullOrWhiteSpace(metadata.Version))
                 return;
 
-            if (IsNewerVersion(metadata.Version, AppVersion.Current))
+            bool updateAvailable = IsNewerVersion(metadata.Version, AppVersion.Current);
+
+            // Fire-and-forget: log the enquiry silently
+            _ = LogUpdateEnquiryAsync(settings.UpdateLocation, metadata.Version, updateAvailable);
+
+            if (updateAvailable)
             {
                 _latestMetadata = metadata;
                 UpdateAvailable?.Invoke(metadata);
@@ -52,6 +58,47 @@ static class UpdateChecker
         catch (Exception ex)
         {
             Debug.WriteLine($"Update check failed: {ex.Message}");
+        }
+    }
+
+    private static async Task LogUpdateEnquiryAsync(string updateLocation, string remoteVersion, bool updateAvailable)
+    {
+        try
+        {
+            string logsDir = Path.Combine(updateLocation, "_logs");
+            Directory.CreateDirectory(logsDir);
+
+            string fileName = $"{DateTime.Now:yyyyMMdd}_UpdateEnquiry.log";
+            string logPath = Path.Combine(logsDir, fileName);
+
+            string user = Environment.UserName;
+            string machine = Environment.MachineName;
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string status = updateAvailable ? "Update Available" : "Up to Date";
+            string logLine = $"{timestamp} | User: {user} | PC: {machine} | Current: {AppVersion.Current} | Remote: {remoteVersion} | {status}{Environment.NewLine}";
+
+            byte[] data = Encoding.UTF8.GetBytes(logLine);
+
+            // Retry with delay to handle concurrent file access from multiple instances
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    using var fs = new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                    await fs.WriteAsync(data);
+                    await fs.FlushAsync();
+                    return;
+                }
+                catch (IOException)
+                {
+                    // File likely locked by another instance, wait and retry
+                    await Task.Delay(500 * (attempt + 1));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Update enquiry log failed: {ex.Message}");
         }
     }
 
