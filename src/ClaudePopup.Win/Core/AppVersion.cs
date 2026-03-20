@@ -2,5 +2,5 @@ namespace ClaudePopup;
 
 static class AppVersion
 {
-    public const string Current = "1.0.27";
+    public const string Current = "1.0.30";
 }

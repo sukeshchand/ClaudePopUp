@@ -1,5 +1,5 @@
 ﻿{
-    "releaseNotes":  "Add update enquiry logging to _logs folder",
-    "publishedAt":  "2026-03-20T12:47:55Z",
-    "version":  "1.0.27"
+    "releaseNotes":  "Fix session mismatch, date picker for history, remove 100-entry cap",
+    "publishedAt":  "2026-03-20T14:35:01Z",
+    "version":  "1.0.30"
 }

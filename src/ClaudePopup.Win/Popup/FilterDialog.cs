@@ -12,16 +12,24 @@ class FilterDialog : Form
     private readonly ListBox _listBox;
     private readonly RoundedButton _okButton;
     private readonly RoundedButton _clearButton;
+    private readonly DateTimePicker _datePicker;
+    private readonly RoundedButton _prevDayButton;
+    private readonly RoundedButton _nextDayButton;
 
     private List<string> _cwdValues = new();
     private List<(string SessionId, string Cwd)> _sessionValues = new();
+    private DateTime _selectedDate;
+    private List<DateTime> _availableDates = new();
 
     public FilterMode SelectedMode { get; private set; } = FilterMode.None;
     public string SelectedValue { get; private set; } = "";
+    public DateTime SelectedDate { get; private set; }
 
-    public FilterDialog(PopupTheme theme, FilterMode currentMode, string currentValue)
+    public FilterDialog(PopupTheme theme, FilterMode currentMode, string currentValue, DateTime currentDate)
     {
         _theme = theme;
+        _selectedDate = currentDate.Date;
+        SelectedDate = _selectedDate;
         Text = "Filter History";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -30,16 +38,72 @@ class FilterDialog : Form
         ShowInTaskbar = false;
         BackColor = theme.BgDark;
         ForeColor = theme.TextPrimary;
-        ClientSize = new Size(380, 360);
+        ClientSize = new Size(380, 420);
         Font = new Font("Segoe UI", 10f);
 
+        // --- Date section ---
+        var dateLabel = new Label
+        {
+            Text = "Date:",
+            Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(16, 14),
+            BackColor = Color.Transparent,
+        };
+
+        _prevDayButton = new RoundedButton
+        {
+            Text = "\u25C0",
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Size = new Size(30, 28),
+            Location = new Point(16, 38),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        _prevDayButton.FlatAppearance.BorderSize = 0;
+        _prevDayButton.FlatAppearance.MouseOverBackColor = theme.Primary;
+        _prevDayButton.Click += (_, _) => NavigateDate(-1);
+
+        _datePicker = new DateTimePicker
+        {
+            Format = DateTimePickerFormat.Custom,
+            CustomFormat = "ddd, dd MMM yyyy",
+            Font = new Font("Segoe UI", 10f),
+            Location = new Point(52, 38),
+            Size = new Size(234, 28),
+            Value = _selectedDate,
+            MaxDate = DateTime.Today,
+            CalendarForeColor = theme.TextPrimary,
+            CalendarMonthBackground = theme.BgHeader,
+        };
+        _datePicker.ValueChanged += (_, _) => OnDateChanged(_datePicker.Value.Date);
+
+        _nextDayButton = new RoundedButton
+        {
+            Text = "\u25B6",
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Size = new Size(30, 28),
+            Location = new Point(292, 38),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        _nextDayButton.FlatAppearance.BorderSize = 0;
+        _nextDayButton.FlatAppearance.MouseOverBackColor = theme.Primary;
+        _nextDayButton.Click += (_, _) => NavigateDate(+1);
+
+        // --- Group by section ---
         var groupLabel = new Label
         {
             Text = "Group by:",
             Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
             ForeColor = theme.TextPrimary,
             AutoSize = true,
-            Location = new Point(16, 14),
+            Location = new Point(16, 78),
             BackColor = Color.Transparent,
         };
 
@@ -50,7 +114,7 @@ class FilterDialog : Form
             ForeColor = theme.TextPrimary,
             BackColor = Color.Transparent,
             AutoSize = true,
-            Location = new Point(16, 40),
+            Location = new Point(16, 102),
             Checked = currentMode == FilterMode.Cwd,
         };
         _rbCwd.CheckedChanged += (_, _) => { if (_rbCwd.Checked) PopulateList(FilterMode.Cwd); };
@@ -62,7 +126,7 @@ class FilterDialog : Form
             ForeColor = theme.TextPrimary,
             BackColor = Color.Transparent,
             AutoSize = true,
-            Location = new Point(180, 40),
+            Location = new Point(180, 102),
             Checked = currentMode == FilterMode.Session,
         };
         _rbSession.CheckedChanged += (_, _) => { if (_rbSession.Checked) PopulateList(FilterMode.Session); };
@@ -73,13 +137,13 @@ class FilterDialog : Form
             Font = new Font("Segoe UI", 9f),
             ForeColor = theme.TextSecondary,
             AutoSize = true,
-            Location = new Point(16, 70),
+            Location = new Point(16, 130),
             BackColor = Color.Transparent,
         };
 
         _listBox = new ListBox
         {
-            Location = new Point(16, 92),
+            Location = new Point(16, 152),
             Size = new Size(348, 190),
             Font = new Font("Cascadia Code", 9f),
             BackColor = theme.BgHeader,
@@ -94,7 +158,7 @@ class FilterDialog : Form
             Text = "OK",
             Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
             Size = new Size(100, 36),
-            Location = new Point(160, 300),
+            Location = new Point(160, 360),
             FlatStyle = FlatStyle.Flat,
             BackColor = theme.Primary,
             ForeColor = Color.White,
@@ -109,7 +173,7 @@ class FilterDialog : Form
             Text = "Clear Filter",
             Font = new Font("Segoe UI", 9.5f),
             Size = new Size(100, 36),
-            Location = new Point(268, 300),
+            Location = new Point(268, 360),
             FlatStyle = FlatStyle.Flat,
             BackColor = theme.PrimaryDim,
             ForeColor = theme.TextSecondary,
@@ -121,16 +185,22 @@ class FilterDialog : Form
         {
             SelectedMode = FilterMode.None;
             SelectedValue = "";
+            SelectedDate = DateTime.Today;
             DialogResult = DialogResult.OK;
             Close();
         };
 
-        Controls.AddRange(new Control[] { groupLabel, _rbCwd, _rbSession, listLabel, _listBox, _okButton, _clearButton });
+        Controls.AddRange(new Control[]
+        {
+            dateLabel, _prevDayButton, _datePicker, _nextDayButton,
+            groupLabel, _rbCwd, _rbSession, listLabel, _listBox, _okButton, _clearButton
+        });
 
-        // Load data and populate
-        ResponseHistory.Invalidate();
-        _cwdValues = ResponseHistory.GetTodayDistinctCwd();
-        _sessionValues = ResponseHistory.GetTodayDistinctSessions();
+        // Load available dates and data for selected date
+        _availableDates = ResponseHistory.GetAvailableDates();
+        SetMinDate();
+        LoadDataForDate();
+        UpdateDayNavButtons();
 
         if (currentMode == FilterMode.Cwd)
             PopulateList(FilterMode.Cwd, currentValue);
@@ -148,6 +218,52 @@ class FilterDialog : Form
         }
     }
 
+    private void SetMinDate()
+    {
+        if (_availableDates.Count > 0)
+            _datePicker.MinDate = _availableDates[0];
+        else
+            _datePicker.MinDate = DateTime.Today;
+    }
+
+    private void LoadDataForDate()
+    {
+        ResponseHistory.Invalidate();
+        _cwdValues = ResponseHistory.GetDistinctCwd(_selectedDate);
+        _sessionValues = ResponseHistory.GetDistinctSessions(_selectedDate);
+    }
+
+    private void OnDateChanged(DateTime newDate)
+    {
+        if (newDate.Date == _selectedDate) return;
+        _selectedDate = newDate.Date;
+        SelectedDate = _selectedDate;
+        LoadDataForDate();
+        UpdateDayNavButtons();
+
+        // Re-populate the list with data from the new date
+        if (_rbCwd.Checked)
+            PopulateList(FilterMode.Cwd);
+        else if (_rbSession.Checked)
+            PopulateList(FilterMode.Session);
+    }
+
+    private void NavigateDate(int direction)
+    {
+        var newDate = _selectedDate.AddDays(direction);
+        if (newDate > DateTime.Today) return;
+        if (_availableDates.Count > 0 && newDate < _availableDates[0]) return;
+
+        _datePicker.Value = newDate;
+        // ValueChanged event will trigger OnDateChanged
+    }
+
+    private void UpdateDayNavButtons()
+    {
+        _prevDayButton.Enabled = _availableDates.Count > 0 && _selectedDate > _availableDates[0];
+        _nextDayButton.Enabled = _selectedDate < DateTime.Today;
+    }
+
     private void PopulateList(FilterMode mode, string? selectValue = null)
     {
         _listBox.Items.Clear();
@@ -158,7 +274,7 @@ class FilterDialog : Form
             {
                 string folder = Path.GetFileName(cwd.TrimEnd('/', '\\'));
                 if (string.IsNullOrEmpty(folder)) folder = cwd;
-                int count = ResponseHistory.FilterTodayByCwd(cwd).Count;
+                int count = ResponseHistory.FilterByCwd(_selectedDate, cwd).Count;
                 _listBox.Items.Add(new FilterItem(folder, cwd, count));
             }
         }
@@ -169,7 +285,7 @@ class FilterDialog : Form
                 string shortId = sessionId.Length > 8 ? sessionId[..8] : sessionId;
                 string folder = string.IsNullOrEmpty(cwd) ? "" : Path.GetFileName(cwd.TrimEnd('/', '\\'));
                 string display = string.IsNullOrEmpty(folder) ? shortId : $"{shortId} ({folder})";
-                int count = ResponseHistory.FilterTodayBySession(sessionId).Count;
+                int count = ResponseHistory.FilterBySession(_selectedDate, sessionId).Count;
                 _listBox.Items.Add(new FilterItem(display, sessionId, count));
             }
         }
@@ -197,6 +313,7 @@ class FilterDialog : Form
         {
             SelectedMode = _rbCwd.Checked ? FilterMode.Cwd : FilterMode.Session;
             SelectedValue = fi.Value;
+            SelectedDate = _selectedDate;
             DialogResult = DialogResult.OK;
             Close();
         }

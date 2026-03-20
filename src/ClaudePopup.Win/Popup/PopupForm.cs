@@ -53,6 +53,7 @@ class PopupForm : Form
     private string _filterValue = "";
     private string _currentSessionId = "";
     private List<HistoryIndex>? _filteredIndex;
+    private DateTime _selectedDate = DateTime.Today;
 
     private readonly Label _updateAvailableLabel;
     private readonly Label _updateButton;
@@ -567,22 +568,36 @@ class PopupForm : Form
         _lastMessage = message;
         _lastType = type;
 
-        // Reset to live view
+        // Reset to live view and current date
         _viewingHistory = false;
         _historyIndex = -1;
         _filteredIndex = null;
+        _selectedDate = DateTime.Today;
 
         // If snoozed, don't show the popup
         if (IsSnoozed)
             return;
 
-        // Read question and session info from the latest history entry
+        // Read question from the latest history entry matching this session
         ResponseHistory.Invalidate();
-        var latest = ResponseHistory.GetLatest();
-        string question = latest?.Question ?? "";
-        // Prefer passed-in session info, fall back to history entry
-        if (string.IsNullOrEmpty(sessionId)) sessionId = latest?.SessionId ?? "";
-        if (string.IsNullOrEmpty(cwd)) cwd = latest?.Cwd ?? "";
+        string question = "";
+        if (!string.IsNullOrEmpty(sessionId))
+        {
+            var sessionEntries = ResponseHistory.FilterBySession(DateTime.Today, sessionId);
+            if (sessionEntries.Count > 0)
+            {
+                var latestSessionEntry = ResponseHistory.LoadEntry(sessionEntries[^1]);
+                question = latestSessionEntry?.Question ?? "";
+                if (string.IsNullOrEmpty(cwd)) cwd = latestSessionEntry?.Cwd ?? "";
+            }
+        }
+        else
+        {
+            var latest = ResponseHistory.GetLatest();
+            question = latest?.Question ?? "";
+            if (string.IsNullOrEmpty(sessionId)) sessionId = latest?.SessionId ?? "";
+            if (string.IsNullOrEmpty(cwd)) cwd = latest?.Cwd ?? "";
+        }
 
         // Default filter to current session (even if user had folder filter active)
         if (!string.IsNullOrEmpty(sessionId))
@@ -590,7 +605,7 @@ class PopupForm : Form
             _currentSessionId = sessionId;
             _filterMode = FilterMode.Session;
             _filterValue = sessionId;
-            _filteredIndex = ResponseHistory.FilterTodayBySession(sessionId);
+            _filteredIndex = ResponseHistory.FilterBySession(_selectedDate, sessionId);
         }
         else
         {
@@ -733,8 +748,8 @@ class PopupForm : Form
         if (_filterMode != FilterMode.None)
         {
             _filteredIndex = _filterMode == FilterMode.Cwd
-                ? ResponseHistory.FilterTodayByCwd(_filterValue)
-                : ResponseHistory.FilterTodayBySession(_filterValue);
+                ? ResponseHistory.FilterByCwd(_selectedDate, _filterValue)
+                : ResponseHistory.FilterBySession(_selectedDate, _filterValue);
         }
 
         var index = GetActiveIndex();
@@ -756,20 +771,21 @@ class PopupForm : Form
 
     private void ShowFilterDialog()
     {
-        using var dlg = new FilterDialog(_theme, _filterMode, _filterValue);
+        using var dlg = new FilterDialog(_theme, _filterMode, _filterValue, _selectedDate);
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
             _filterMode = dlg.SelectedMode;
             _filterValue = dlg.SelectedValue;
+            _selectedDate = dlg.SelectedDate;
             _filteredIndex = null;
 
             if (_filterMode != FilterMode.None)
             {
-                // Build filtered list and navigate to first entry
+                // Build filtered list and navigate to latest entry
                 ResponseHistory.Invalidate();
                 _filteredIndex = _filterMode == FilterMode.Cwd
-                    ? ResponseHistory.FilterTodayByCwd(_filterValue)
-                    : ResponseHistory.FilterTodayBySession(_filterValue);
+                    ? ResponseHistory.FilterByCwd(_selectedDate, _filterValue)
+                    : ResponseHistory.FilterBySession(_selectedDate, _filterValue);
 
                 if (_filteredIndex.Count > 0)
                 {
@@ -779,12 +795,21 @@ class PopupForm : Form
                     if (entry != null)
                         DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd);
                 }
+                else
+                {
+                    // Filter returned no results — reset navigation state
+                    _viewingHistory = false;
+                    _historyIndex = -1;
+                    UpdateHistoryNav();
+                    PositionControls();
+                }
             }
             else
             {
-                // Clear filter — go back to full index
+                // Clear filter — go back to full index and today's date
                 _viewingHistory = false;
                 _historyIndex = -1;
+                _selectedDate = DateTime.Today;
                 UpdateHistoryNav();
                 PositionControls();
             }
@@ -795,6 +820,9 @@ class PopupForm : Form
     {
         if (_filterMode != FilterMode.None && _filteredIndex != null)
             return _filteredIndex;
+        // When viewing a different date, show that day's entries; otherwise full index
+        if (_selectedDate.Date != DateTime.Today)
+            return ResponseHistory.LoadDayIndex(_selectedDate);
         return ResponseHistory.LoadIndex();
     }
 
@@ -844,15 +872,20 @@ class PopupForm : Form
                     : $" [{shortId} - {sessionCwd}]";
             }
 
+            // Show date prefix when viewing a day other than today
+            string datePrefix = _selectedDate.Date != DateTime.Today
+                ? $"{_selectedDate:dd MMM} \u2022 "
+                : "";
+
             if (_viewingHistory)
             {
-                _navLabel.Text = $"{_historyIndex + 1} / {index.Count}{filterLabel}";
+                _navLabel.Text = $"{datePrefix}{_historyIndex + 1} / {index.Count}{filterLabel}";
                 _prevButton.Enabled = _historyIndex > 0;
                 _nextButton.Enabled = _historyIndex < index.Count - 1;
             }
             else
             {
-                _navLabel.Text = $"Latest ({index.Count}){filterLabel}";
+                _navLabel.Text = $"{datePrefix}Latest ({index.Count}){filterLabel}";
                 _prevButton.Enabled = index.Count > 0;
                 _nextButton.Enabled = false;
             }

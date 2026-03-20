@@ -44,10 +44,30 @@ static class ResponseHistory
 
         var entries = LoadDayEntries(DateTime.Now);
 
-        if (entries.Count > 0 && entries[^1].Type == NotificationType.Pending)
+        // Find the last pending entry that matches this session (not just the very last entry)
+        int pendingIdx = -1;
+        if (!string.IsNullOrEmpty(sessionId))
         {
-            var pending = entries[^1];
-            entries[^1] = pending with { Title = title, Message = message, Type = type, Timestamp = DateTime.Now, SessionId = sessionId, Cwd = cwd };
+            for (int i = entries.Count - 1; i >= 0; i--)
+            {
+                if (entries[i].Type == NotificationType.Pending
+                    && string.Equals(entries[i].SessionId, sessionId, StringComparison.Ordinal))
+                {
+                    pendingIdx = i;
+                    break;
+                }
+            }
+        }
+        else if (entries.Count > 0 && entries[^1].Type == NotificationType.Pending)
+        {
+            // Fallback for no sessionId: match last pending (legacy behavior)
+            pendingIdx = entries.Count - 1;
+        }
+
+        if (pendingIdx >= 0)
+        {
+            var pending = entries[pendingIdx];
+            entries[pendingIdx] = pending with { Title = title, Message = message, Type = type, Timestamp = DateTime.Now, SessionId = sessionId, Cwd = cwd };
         }
         else
         {
@@ -124,10 +144,6 @@ static class ResponseHistory
             Debug.WriteLine($"Failed to load history index: {ex.Message}");
         }
 
-        // Keep only last 100
-        if (index.Count > 100)
-            index = index.Skip(index.Count - 100).ToList();
-
         _cachedIndex = index;
         return index;
     }
@@ -170,17 +186,47 @@ static class ResponseHistory
     /// Returns index entries for today only, ordered by timestamp.
     /// </summary>
     public static List<HistoryIndex> LoadTodayIndex()
+        => LoadDayIndex(DateTime.Now);
+
+    /// <summary>
+    /// Returns index entries for a specific date, ordered by timestamp.
+    /// Reads directly from the day file to avoid the 100-entry cap in LoadIndex.
+    /// </summary>
+    public static List<HistoryIndex> LoadDayIndex(DateTime date)
     {
-        var todayFile = GetDayFile(DateTime.Now);
-        return LoadIndex().Where(i => string.Equals(i.DayFile, todayFile, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(i => i.Timestamp).ToList();
+        var dayFile = GetDayFile(date);
+        var index = new List<HistoryIndex>();
+        try
+        {
+            if (!File.Exists(dayFile)) return index;
+            string json = File.ReadAllText(dayFile);
+            var entries = JsonSerializer.Deserialize<List<HistoryEntry>>(json);
+            if (entries == null) return index;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                index.Add(new HistoryIndex(e.Title, e.Type, e.Timestamp, dayFile, i, e.SessionId, e.Cwd));
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load day index for {date:yyyyMMdd}: {ex.Message}");
+        }
+        return index.OrderBy(i => i.Timestamp).ToList();
     }
 
     /// <summary>
     /// Returns distinct CWD folder paths from today's entries (non-empty only).
     /// </summary>
     public static List<string> GetTodayDistinctCwd()
-        => LoadTodayIndex().Where(i => !string.IsNullOrEmpty(i.Cwd))
+        => GetDistinctCwd(DateTime.Now);
+
+    /// <summary>
+    /// Returns distinct CWD folder paths for a specific date (non-empty only).
+    /// </summary>
+    public static List<string> GetDistinctCwd(DateTime date)
+        => LoadDayIndex(date).Where(i => !string.IsNullOrEmpty(i.Cwd))
             .Select(i => i.Cwd).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>
@@ -188,7 +234,14 @@ static class ResponseHistory
     /// paired with the CWD for display context.
     /// </summary>
     public static List<(string SessionId, string Cwd)> GetTodayDistinctSessions()
-        => LoadTodayIndex().Where(i => !string.IsNullOrEmpty(i.SessionId))
+        => GetDistinctSessions(DateTime.Now);
+
+    /// <summary>
+    /// Returns distinct SessionId values for a specific date (non-empty only),
+    /// paired with the CWD for display context.
+    /// </summary>
+    public static List<(string SessionId, string Cwd)> GetDistinctSessions(DateTime date)
+        => LoadDayIndex(date).Where(i => !string.IsNullOrEmpty(i.SessionId))
             .GroupBy(i => i.SessionId)
             .Select(g => (g.Key, g.First().Cwd))
             .ToList();
@@ -197,13 +250,48 @@ static class ResponseHistory
     /// Returns today's entries filtered by CWD, ordered by timestamp.
     /// </summary>
     public static List<HistoryIndex> FilterTodayByCwd(string cwd)
-        => LoadTodayIndex().Where(i => string.Equals(i.Cwd, cwd, StringComparison.OrdinalIgnoreCase)).ToList();
+        => FilterByCwd(DateTime.Now, cwd);
+
+    /// <summary>
+    /// Returns entries for a specific date filtered by CWD, ordered by timestamp.
+    /// </summary>
+    public static List<HistoryIndex> FilterByCwd(DateTime date, string cwd)
+        => LoadDayIndex(date).Where(i => string.Equals(i.Cwd, cwd, StringComparison.OrdinalIgnoreCase)).ToList();
 
     /// <summary>
     /// Returns today's entries filtered by SessionId, ordered by timestamp.
     /// </summary>
     public static List<HistoryIndex> FilterTodayBySession(string sessionId)
-        => LoadTodayIndex().Where(i => string.Equals(i.SessionId, sessionId, StringComparison.Ordinal)).ToList();
+        => FilterBySession(DateTime.Now, sessionId);
+
+    /// <summary>
+    /// Returns entries for a specific date filtered by SessionId, ordered by timestamp.
+    /// </summary>
+    public static List<HistoryIndex> FilterBySession(DateTime date, string sessionId)
+        => LoadDayIndex(date).Where(i => string.Equals(i.SessionId, sessionId, StringComparison.Ordinal)).ToList();
+
+    /// <summary>
+    /// Returns dates that have history files, ordered ascending.
+    /// </summary>
+    public static List<DateTime> GetAvailableDates()
+    {
+        var dates = new List<DateTime>();
+        try
+        {
+            if (!Directory.Exists(_historyDir)) return dates;
+            foreach (var file in Directory.GetFiles(_historyDir, "*.json").OrderBy(f => f))
+            {
+                string name = Path.GetFileNameWithoutExtension(file);
+                if (DateTime.TryParseExact(name, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var date))
+                    dates.Add(date);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to get available dates: {ex.Message}");
+        }
+        return dates;
+    }
 
     public static void Invalidate() => _cachedIndex = null;
 }
